@@ -1,0 +1,11 @@
+[package]
+name = "groupshop-frontend-shared"
+description = "Shared frontend helpers for GROUPSHOP"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+web-sys = { workspace = true }

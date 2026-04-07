@@ -1,0 +1,28 @@
+version: "3"
+
+silent: true
+
+dotenv: [".env"]
+
+includes:
+  config: ./taskfiles/config.yml
+  db: ./taskfiles/backend/db.yml
+  api: ./taskfiles/backend/api.yml
+  landing: ./taskfiles/frontend/landing.yml
+
+tasks:
+  lint:
+    cmds:
+      - cargo fmt --all -- --check
+      - cargo check -p groupshop-landing --target wasm32-unknown-unknown
+      - cargo check -p groupshop-api --target wasm32-unknown-unknown
+
+  everything-deploy:
+    desc: "Deploy everything"
+    cmds:
+      - task api:deploy
+      - task landing:deploy
+
+  everything-dev:
+    desc: "Run everything in development mode"
+    deps: [api:dev, landing:dev]

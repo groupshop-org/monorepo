@@ -1,0 +1,15 @@
+[package]
+name = "groupshop-api"
+description = "Minimal GROUPSHOP backend API"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+groupshop-backend-shared = { workspace = true }
+worker = { workspace = true }

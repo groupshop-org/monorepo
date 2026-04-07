@@ -1,0 +1,66 @@
+version: "3"
+
+includes:
+  config:
+    taskfile: ../config.yml
+    flatten: true
+
+tasks:
+  dev:
+    desc: "Run the backend API in development mode"
+    deps: ["build-dev-once"]
+    cmds:
+      - task: dev-inner
+
+  deploy:
+    desc: "Deploy the backend API worker to Cloudflare"
+    deps: ["build-release"]
+    env:
+      CLOUDFLARE_API_TOKEN: "{{.CLOUDFLARE_DEPLOY_API_TOKEN}}"
+    cmds:
+      - >
+        wrangler deploy
+        -c "{{.PATH_CLOUDFLARE_API_WRANGLER_CONFIG}}"
+        --env prod
+
+  build-dev-once:
+    internal: true
+    dir: "{{.PATH_PACKAGE_API}}"
+    cmds:
+      - worker-build --dev
+
+  build-release:
+    internal: true
+    dir: "{{.PATH_PACKAGE_API}}"
+    cmds:
+      - worker-build --release
+
+  dev-inner:
+    internal: true
+    deps: ["watch-dev", "wrangler-dev"]
+
+  watch-dev:
+    internal: true
+    dir: "{{.PATH_PACKAGE_API}}"
+    cmds:
+      - >
+        watchexec
+        -w "{{.PATH_ROOT_CARGO_TOML}}"
+        -w "{{.PATH_PACKAGE_API}}"
+        worker-build --dev
+
+  wrangler-dev:
+    internal: true
+    env:
+      CLOUDFLARE_INCLUDE_PROCESS_ENV: true
+    cmds:
+      - >
+        wrangler dev
+        -c "{{.PATH_CLOUDFLARE_API_WRANGLER_CONFIG}}"
+        --env dev
+        --local
+        --log-level info
+        --show-interactive-dev-session=false
+        --persist-to="{{.PATH_DB_DEV}}"
+        --port {{.PORT_API_DEV}}
+        --var "DB_BINDING:{{.CF_BINDING_DB}}"

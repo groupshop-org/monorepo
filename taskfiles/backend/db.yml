@@ -1,0 +1,40 @@
+version: "3"
+
+includes:
+  config:
+    taskfile: ../config.yml
+    flatten: true
+
+tasks:
+  recreate-dev:
+    desc: "Delete local dev D1 state and re-apply migrations from scratch"
+    cmds:
+      - 'echo "Resetting dev D1 at: {{.PATH_DB_DEV}}"'
+      - rm -rf "{{.PATH_DB_DEV}}"
+      - mkdir -p "{{.PATH_DB_DEV}}"
+      - task: migrations-apply-dev
+
+  migrations-apply-dev:
+    desc: "Apply local D1 migrations for development"
+    cmds:
+      - >
+        printf 'y\n' | wrangler d1 migrations apply
+        -c "{{.PATH_CLOUDFLARE_API_WRANGLER_CONFIG}}"
+        --env dev
+        {{.CF_BINDING_DB}}
+        --local=true
+        --remote=false
+        --persist-to="{{.PATH_DB_DEV}}"
+
+  migrations-apply-prod:
+    desc: "Apply remote D1 migrations for production"
+    env:
+      CLOUDFLARE_API_TOKEN: "{{.CLOUDFLARE_DEPLOY_API_TOKEN}}"
+    cmds:
+      - >
+        printf 'y\n' | wrangler d1 migrations apply
+        -c "{{.PATH_CLOUDFLARE_API_WRANGLER_CONFIG}}"
+        --env prod
+        {{.CF_BINDING_DB}}
+        --local=false
+        --remote=true

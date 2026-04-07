@@ -1,0 +1,27 @@
+version: "3"
+
+vars:
+  # PATHS
+  PATH_REPO_ROOT:
+    sh: git rev-parse --show-toplevel
+  PATH_PACKAGES_FRONTEND: '{{joinPath .PATH_REPO_ROOT "packages" "frontend"}}'
+  PATH_PACKAGES_BACKEND: '{{joinPath .PATH_REPO_ROOT "packages" "backend"}}'
+  PATH_CLOUDFLARE_API: '{{joinPath .PATH_REPO_ROOT "cloudflare" "api"}}'
+  PATH_CLOUDFLARE_API_WRANGLER_CONFIG: '{{joinPath .PATH_CLOUDFLARE_API "wrangler.jsonc"}}'
+  PATH_TRUNK_DIST: '{{joinPath .PATH_REPO_ROOT ".trunk-dist"}}'
+  PATH_ROOT_CARGO_TOML: '{{joinPath .PATH_REPO_ROOT "Cargo.toml"}}'
+  PATH_PACKAGE_FRONTEND_SHARED: '{{joinPath .PATH_PACKAGES_FRONTEND "frontend-shared"}}'
+  PATH_PACKAGE_LANDING: '{{joinPath .PATH_PACKAGES_FRONTEND "landing"}}'
+  PATH_PACKAGE_API: '{{joinPath .PATH_PACKAGES_BACKEND "api"}}'
+  PATH_DB_DEV: '{{joinPath .PATH_CLOUDFLARE_API "db" "local" "dev"}}'
+
+  # PORTS
+  PORT_API_DEV: 8081
+  PORT_LANDING_DEV: 8082
+
+  # URLS
+  URL_API_DEV: "http://127.0.0.1:{{.PORT_API_DEV}}"
+  URL_LANDING_DEV: "http://127.0.0.1:{{.PORT_LANDING_DEV}}"
+
+  # CLOUDFLARE BINDINGS
+  CF_BINDING_DB: "DB_GROUPSHOP"

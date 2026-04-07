@@ -1,0 +1,18 @@
+[workspace]
+members = ["packages/backend/*", "packages/frontend/*"]
+resolver = "2"
+
+[workspace.package]
+description = "groupshop"
+edition = "2021"
+version = "0.1.0"
+license = "MIT"
+authors = ["David Komer"]
+rust-version = "1.80.0"
+
+[workspace.dependencies]
+groupshop-backend-shared = { path = "packages/backend/backend-shared" }
+groupshop-frontend-shared = { path = "packages/frontend/frontend-shared" }
+worker = { version = "0.7.5", features = ["d1", "http"] }
+wasm-bindgen = "0.2.105"
+web-sys = { version = "0.3.82", features = ["Document", "Element", "HtmlElement", "Window"] }

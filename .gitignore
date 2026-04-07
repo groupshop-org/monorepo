@@ -1,0 +1,40 @@
+# Trunk
+.trunk-dist
+
+# CLOUDFLARE
+.wrangler
+cloudflare/api/db/local
+.dev.vars
+build/
+
+# Logs
+*.log
+
+# Node
+node_modules
+
+# IDE
+.vscode
+.zed
+*.vim
+*.swo
+*.swp
+
+# OS
+.DS_Store
+
+# Secrets
+.env
+
+# Application-specific
+.obsidian/
+
+# AI
+.claude
+
+
+# Rust
+target/
+
+# Trunk
+.trunk/

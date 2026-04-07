@@ -1,0 +1,41 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "api",
+  "main": "../../packages/backend/api/build/index.js",
+  "compatibility_date": "2026-04-07",
+  "env": {
+    "dev": {
+      "workers_dev": true,
+      "preview_urls": true,
+      "d1_databases": [
+        {
+          "binding": "DB_GROUPSHOP",
+          "database_name": "db-dev",
+          "database_id": "00000000-0000-0000-0000-000000000001",
+          "migrations_dir": "./db/migrations",
+        },
+      ],
+    },
+    "prod": {
+      "workers_dev": false,
+      "preview_urls": false,
+      "vars": {
+        "DB_BINDING": "DB_GROUPSHOP",
+      },
+      "d1_databases": [
+        {
+          "binding": "DB_GROUPSHOP",
+          "database_name": "db-prod",
+          "database_id": "8cec726f-b2bf-4825-bc58-dd656e285c75",
+          "migrations_dir": "./db/migrations",
+        },
+      ],
+    },
+  },
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "enabled": true,
+    },
+  },
+}

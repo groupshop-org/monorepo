@@ -1,0 +1,43 @@
+version: "3"
+
+includes:
+  config:
+    taskfile: ../config.yml
+    flatten: true
+
+vars:
+  PATH_TRUNK_DIST_LANDING: '{{joinPath .PATH_TRUNK_DIST "landing"}}'
+
+tasks:
+  build:
+    desc: "Build the landing page for production"
+    dir: "{{.PATH_PACKAGE_LANDING}}"
+    env:
+      URL_API: "${URL_API}"
+    cmds:
+      - >
+        NO_COLOR=true trunk build
+        --release
+        --dist "{{.PATH_TRUNK_DIST_LANDING}}"
+
+  dev:
+    desc: "Run the landing page in development mode"
+    dir: "{{.PATH_PACKAGE_LANDING}}"
+    env:
+      URL_API: "${URL_API}"
+    cmds:
+      - >
+        NO_COLOR=true trunk serve
+        --port ${PORT_LANDING}
+        --dist "{{.PATH_TRUNK_DIST_LANDING}}"
+        --watch "{{.PATH_PACKAGE_FRONTEND_SHARED}}"
+        --watch "{{.PATH_ROOT_CARGO_TOML}}"
+        --watch "."
+
+  deploy:
+    desc: "Deploy the landing page to Cloudflare Pages"
+    deps: ["build"]
+    env:
+      CLOUDFLARE_API_TOKEN: "{{.CLOUDFLARE_DEPLOY_API_TOKEN}}"
+    cmds:
+      - wrangler pages deploy "{{.PATH_TRUNK_DIST_LANDING}}" --project-name=groupshop-landing
