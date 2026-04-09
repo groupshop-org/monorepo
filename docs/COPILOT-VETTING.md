@@ -1,7 +1,3 @@
-The following is the output from asking `colloseum-copilot` to vet the Groupshop project for the Solana Frontier Hackathon. The vetting process includes a deep dive into the project's market landscape, problem statement, revenue model, go-to-market strategy, founder-market fit, and why Solana is the right platform. It also assesses risks and provides specific feedback for the hackathon submission.
-
-----
-
 Groupshop Deep Dive: Vetting for the Solana Frontier Hackathon
 
   Frontier Hackathon: Apr 6 – May 11, 2026. No tracks — single Grand Champion ($30K) + top 20 ($10K each). Winners interviewed for accelerator ($250K pre-seed). This is a good fit for a consumer/commerce product
