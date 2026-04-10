@@ -8,6 +8,7 @@ authors.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+dominator = { workspace = true }
 groupshop-frontend-shared = { workspace = true }
 wasm-bindgen = { workspace = true }
 web-sys = { workspace = true }

@@ -13,26 +13,39 @@ tasks:
     desc: "Build the landing page for production"
     dir: "{{.PATH_PACKAGE_LANDING}}"
     env:
-      URL_API: "${URL_API}"
+      URL_API: "${URL_API_PROD}"
+      URL_MEDIA: "/media"
     cmds:
       - >
         NO_COLOR=true trunk build
         --release
         --dist "{{.PATH_TRUNK_DIST_LANDING}}"
+      - cp -r "{{.PATH_MEDIA_LANDING}}" "{{.PATH_TRUNK_DIST_LANDING}}/media"
 
   dev:
     desc: "Run the landing page in development mode"
+    deps: ["dev-trunk", "dev-media"]
+
+  dev-trunk:
+    internal: true
     dir: "{{.PATH_PACKAGE_LANDING}}"
     env:
-      URL_API: "${URL_API}"
+      URL_API: "{{.URL_API_DEV}}"
+      URL_MEDIA: "{{.URL_LANDING_MEDIA_DEV}}"
     cmds:
       - >
         NO_COLOR=true trunk serve
-        --port ${PORT_LANDING}
+        --port {{.PORT_LANDING_DEV}}
         --dist "{{.PATH_TRUNK_DIST_LANDING}}"
         --watch "{{.PATH_PACKAGE_FRONTEND_SHARED}}"
         --watch "{{.PATH_ROOT_CARGO_TOML}}"
         --watch "."
+
+  dev-media:
+    internal: true
+    dir: "{{.PATH_MEDIA_LANDING}}"
+    cmds:
+      - http-server --cors -p {{.PORT_LANDING_MEDIA_DEV}}
 
   deploy:
     desc: "Deploy the landing page to Cloudflare Pages"

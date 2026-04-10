@@ -15,13 +15,20 @@ vars:
   PATH_PACKAGE_API: '{{joinPath .PATH_PACKAGES_BACKEND "api"}}'
   PATH_DB_DEV: '{{joinPath .PATH_CLOUDFLARE_API "db" "local" "dev"}}'
 
+  # MEDIA
+  PATH_MEDIA_LANDING: '{{joinPath .PATH_REPO_ROOT "media" "landing"}}'
+
   # PORTS
-  PORT_API_DEV: 8081
-  PORT_LANDING_DEV: 8082
+  PORT_API_DEV: 9081
+  PORT_LANDING_DEV: 9082
+  PORT_LANDING_MEDIA_DEV: 9083
 
   # URLS
   URL_API_DEV: "http://127.0.0.1:{{.PORT_API_DEV}}"
+  URL_API_PROD: "https://api.groupshop.com"
   URL_LANDING_DEV: "http://127.0.0.1:{{.PORT_LANDING_DEV}}"
+  URL_LANDING_PROD: "https://groupshop.com"
+  URL_LANDING_MEDIA_DEV: "http://localhost:{{.PORT_LANDING_MEDIA_DEV}}"
 
   # CLOUDFLARE BINDINGS
   CF_BINDING_DB: "DB_GROUPSHOP"
