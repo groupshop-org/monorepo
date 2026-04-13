@@ -1,5 +1,5 @@
 [workspace]
-members = ["packages/backend/*", "packages/frontend/*", "packages/solana-programs/*"]
+members = ["packages/backend/*", "packages/frontend/*", "packages/solana-programs/*", "packages/cli"]
 resolver = "2"
 
 [workspace.package]
@@ -31,6 +31,14 @@ js-sys = "0.3"
 # Cloudflare
 worker = { version = "0.7.5", features = ["d1", "http"] }
 
-# Solana
+# Solana (on-chain)
 pinocchio = {version = "0.11.1", features = ["cpi"]}
 solana-program-log = "1.1.0"
+
+# Solana (client)
+solana-sdk = "2"
+solana-client = "2"
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+anyhow = "1"

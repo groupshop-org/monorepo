@@ -15,6 +15,7 @@ Read the following documents in order:
 7. **`docs/database.md`** — database schema conventions and Rust DB struct patterns
 8. **`docs/tooling.md`** — development tools, database workflow, linting
 9. **`docs/scheduling.md`** — cron triggers, DO alarms, polling loops
+10. **`docs/ai/solana-dev.md`** — Solana program development, CLI usage, local validator workflow
 
 Only consume business or artwork docs outside this repo when explicitly asked or when product context is needed for a task.
 

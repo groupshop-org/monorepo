@@ -1,0 +1,19 @@
+[package]
+name = "groupshop-cli"
+description = "Groupshop CLI tools"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "groupshop"
+path = "src/main.rs"
+
+[dependencies]
+solana-sdk = { workspace = true }
+solana-client = { workspace = true }
+serde_json = { workspace = true }
+clap = { workspace = true }
+anyhow = { workspace = true }

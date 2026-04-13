@@ -1,0 +1,29 @@
+version: "3"
+
+includes:
+  config:
+    taskfile: ../config.yml
+    flatten: true
+
+vars:
+  PATH_PACKAGES_CLI: '{{joinPath .PATH_REPO_ROOT "packages" "cli"}}'
+
+tasks:
+  exec:
+    dir: "{{.PATH_PACKAGES_CLI}}"
+    desc: "Execute an arbitrary CLI command (with all env vars loaded)"
+    cmds:
+      - cargo run -- {{.CLI_ARGS}}
+
+  help:
+    desc: "Show CLI help"
+    cmds:
+      - task cli:exec -- --help
+
+  invoke:
+    desc: "Invoke a deployed Solana program by program ID"
+    cmds:
+      - >
+        task cli:exec --
+        --rpc-url {{.URL_SOLANA_VALIDATOR_RPC_DEV}}
+        invoke {{.CLI_ARGS}}

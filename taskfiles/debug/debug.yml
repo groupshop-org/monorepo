@@ -7,7 +7,11 @@ includes:
 
 tasks:
   scratch:
-    desc: "Just a scratch task to debug a current problem"
+    desc: "Deploy the market program and invoke it"
     cmds:
-      - >
-        task solana-programs:deploy-local
+      - task solana-programs:build-dev
+      - |
+        DEPLOY_OUTPUT=$(task solana-programs:deploy-local)
+        PROGRAM_ID=$(echo "$DEPLOY_OUTPUT" | jq -r '.programId')
+        echo "Deployed program: $PROGRAM_ID"
+        task cli:exec -- --rpc-url {{.URL_SOLANA_VALIDATOR_RPC_DEV}} invoke "$PROGRAM_ID"

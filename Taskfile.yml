@@ -13,6 +13,7 @@ includes:
   health-dashboard: ./taskfiles/frontend/health.yml
   solana-programs: ./taskfiles/solana/programs.yml
   solana-validator: ./taskfiles/solana/validator.yml
+  cli: ./taskfiles/cli/cli.yml
   debug: ./taskfiles/debug/debug.yml
 
 tasks:
@@ -23,6 +24,7 @@ tasks:
       - cargo check -p groupshop-health-dashboard --target wasm32-unknown-unknown
       - cargo check -p groupshop-api --target wasm32-unknown-unknown
       - cargo check -p groupshop-health --target wasm32-unknown-unknown
+      - cargo check -p groupshop-cli
 
   deploy:
     desc: "Deploy everything"
