@@ -1,0 +1,38 @@
+version: "3"
+
+includes:
+  config:
+    taskfile: ../config.yml
+    flatten: true
+
+vars:
+  PATH_TRUNK_DIST_LANDING: '{{joinPath .PATH_TRUNK_DIST "landing"}}'
+  PATH_PACKAGE_PROGRAM_MARKET: '{{joinPath .PATH_PACKAGES_SOLANA_PROGRAMS "market"}}'
+  PATH_ARTIFACT_PROGRAM_MARKET: '{{joinPath .PATH_TARGET_DEPLOY "groupshop_contract_market.so"}}'
+
+tasks:
+  dev:
+    desc: "Run the solana programs in development mode"
+    cmds:
+      - watchexec -w "{{.PATH_PACKAGE_PROGRAM_MARKET}}" -- task solana-programs:build-dev
+
+  deploy-local:
+    desc: "Deploy the solana programs to the local cluster"
+    cmds:
+      - >
+        solana program deploy
+        --output json
+        --url {{.URL_SOLANA_VALIDATOR_RPC_DEV}}
+        "{{.PATH_ARTIFACT_PROGRAM_MARKET}}"
+
+  build-release:
+    desc: "Build the solana programs"
+    dir: "{{.PATH_PACKAGE_PROGRAM_MARKET}}"
+    cmds:
+      - cargo build-sbf
+
+  build-dev:
+    desc: "Build the solana programs for development"
+    dir: "{{.PATH_PACKAGE_PROGRAM_MARKET}}"
+    cmds:
+      - cargo build-sbf --debug

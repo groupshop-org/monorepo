@@ -1,0 +1,18 @@
+version: "3"
+
+includes:
+  config:
+    taskfile: ../config.yml
+    flatten: true
+
+tasks:
+  dev:
+    desc: "Startup the local Solana validator for development"
+    cmds:
+      - >
+        solana-test-validator
+        --quiet
+        --reset
+        --rpc-port {{.PORT_SOLANA_VALIDTOR_DEV_RPC}}
+        --faucet-port {{.PORT_SOLANA_VALIDTOR_DEV_FAUCET}}
+        --gossip-port {{.PORT_SOLANA_VALIDTOR_DEV_GOSSIP}}
