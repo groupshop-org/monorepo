@@ -1,51 +1,21 @@
-use dominator::{class, pseudo, stylesheet};
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
+
+use dominator::{class, pseudo};
 
 use crate::theme::color;
-
-pub fn init() {
-    Lazy::force(&GLOBAL);
-}
-
-static GLOBAL: Lazy<()> = Lazy::new(|| {
-    stylesheet!("*", {
-        .style("box-sizing", "border-box")
-    });
-
-    stylesheet!("html, body", {
-        .style("margin", "0")
-        .style("min-height", "100vh")
-        .style("background", "#fafbfc")
-        .style("color", color::INK)
-        .style("font-family", "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, sans-serif")
-        .style("-webkit-font-smoothing", "antialiased")
-    });
-
-    stylesheet!("body", {
-        .style("padding", "0")
-    });
-
-    stylesheet!("img", {
-        .style("max-width", "100%")
-    });
-
-    stylesheet!("a", {
-        .style("color", "inherit")
-    });
-});
 
 // ---------------------------------------------------------------------------
 // Page shells
 // ---------------------------------------------------------------------------
 
-pub static PAGE: Lazy<String> = Lazy::new(|| {
+pub static PAGE: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("min-height", "100vh")
         .style("padding", "0.75rem clamp(1rem, 2.5vw, 2rem)")
     }
 });
 
-pub static SHELL: Lazy<String> = Lazy::new(|| {
+pub static SHELL: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("width", "100%")
         .style("max-width", "82rem")
@@ -53,7 +23,7 @@ pub static SHELL: Lazy<String> = Lazy::new(|| {
     }
 });
 
-pub static LEGAL_SHELL: Lazy<String> = Lazy::new(|| {
+pub static LEGAL_SHELL: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("width", "min(100%, 64rem)")
         .style("margin", "0 auto")
@@ -64,7 +34,7 @@ pub static LEGAL_SHELL: Lazy<String> = Lazy::new(|| {
 // Header / masthead
 // ---------------------------------------------------------------------------
 
-pub static MASTHEAD: Lazy<String> = Lazy::new(|| {
+pub static MASTHEAD: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("display", "flex")
         .style("flex-wrap", "wrap")
@@ -76,7 +46,7 @@ pub static MASTHEAD: Lazy<String> = Lazy::new(|| {
     }
 });
 
-pub static BRAND: Lazy<String> = Lazy::new(|| {
+pub static BRAND: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("display", "inline-flex")
         .style("align-items", "center")
@@ -85,14 +55,14 @@ pub static BRAND: Lazy<String> = Lazy::new(|| {
     }
 });
 
-pub static BRAND_BADGE: Lazy<String> = Lazy::new(|| {
+pub static BRAND_BADGE: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("display", "inline-flex")
         .style("align-items", "center")
     }
 });
 
-pub static LOGO_IMG: Lazy<String> = Lazy::new(|| {
+pub static LOGO_IMG: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("display", "block")
         .style("height", "1.75rem")
@@ -101,7 +71,7 @@ pub static LOGO_IMG: Lazy<String> = Lazy::new(|| {
     }
 });
 
-pub static BRAND_WORD: Lazy<String> = Lazy::new(|| {
+pub static BRAND_WORD: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("color", "#1e9b5a")
         .style("font-size", "1.25rem")
@@ -110,7 +80,7 @@ pub static BRAND_WORD: Lazy<String> = Lazy::new(|| {
     }
 });
 
-pub static NAV: Lazy<String> = Lazy::new(|| {
+pub static NAV: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("display", "flex")
         .style("flex-wrap", "wrap")
@@ -119,7 +89,7 @@ pub static NAV: Lazy<String> = Lazy::new(|| {
     }
 });
 
-pub static NAV_LINK: Lazy<String> = Lazy::new(|| {
+pub static NAV_LINK: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("color", color::MUTED)
         .style("text-decoration", "none")
@@ -132,7 +102,7 @@ pub static NAV_LINK: Lazy<String> = Lazy::new(|| {
     }
 });
 
-pub static NAV_RIGHT: Lazy<String> = Lazy::new(|| {
+pub static NAV_RIGHT: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("display", "flex")
         .style("flex-wrap", "wrap")
@@ -141,7 +111,7 @@ pub static NAV_RIGHT: Lazy<String> = Lazy::new(|| {
     }
 });
 
-pub static PILL: Lazy<String> = Lazy::new(|| {
+pub static PILL: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("display", "inline-flex")
         .style("align-items", "center")
@@ -159,7 +129,7 @@ pub static PILL: Lazy<String> = Lazy::new(|| {
     }
 });
 
-pub static STATUS_PILL: Lazy<String> = Lazy::new(|| {
+pub static STATUS_PILL: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("position", "relative")
         .style("padding-left", "1.1rem")
@@ -177,7 +147,7 @@ pub static STATUS_PILL: Lazy<String> = Lazy::new(|| {
     }
 });
 
-pub static WALLET_PILL: Lazy<String> = Lazy::new(|| {
+pub static WALLET_PILL: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("border-color", color::LINE_STRONG)
     }
@@ -187,7 +157,7 @@ pub static WALLET_PILL: Lazy<String> = Lazy::new(|| {
 // Banner (compact hero)
 // ---------------------------------------------------------------------------
 
-pub static BANNER: Lazy<String> = Lazy::new(|| {
+pub static BANNER: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("display", "flex")
         .style("flex-wrap", "wrap")
@@ -202,7 +172,7 @@ pub static BANNER: Lazy<String> = Lazy::new(|| {
     }
 });
 
-pub static BANNER_COPY: Lazy<String> = Lazy::new(|| {
+pub static BANNER_COPY: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("display", "flex")
         .style("flex-direction", "column")
@@ -210,7 +180,7 @@ pub static BANNER_COPY: Lazy<String> = Lazy::new(|| {
     }
 });
 
-pub static BANNER_STAT: Lazy<String> = Lazy::new(|| {
+pub static BANNER_STAT: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("text-align", "right")
     }
@@ -220,7 +190,7 @@ pub static BANNER_STAT: Lazy<String> = Lazy::new(|| {
 // Main layout (deals + sidebar)
 // ---------------------------------------------------------------------------
 
-pub static MAIN_LAYOUT: Lazy<String> = Lazy::new(|| {
+pub static MAIN_LAYOUT: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("display", "flex")
         .style("flex-wrap", "wrap")
@@ -229,21 +199,21 @@ pub static MAIN_LAYOUT: Lazy<String> = Lazy::new(|| {
     }
 });
 
-pub static CONTENT_AREA: Lazy<String> = Lazy::new(|| {
+pub static CONTENT_AREA: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("flex", "1 1 32rem")
         .style("min-width", "0")
     }
 });
 
-pub static SIDEBAR: Lazy<String> = Lazy::new(|| {
+pub static SIDEBAR: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("flex", "0 1 20rem")
         .style("min-width", "0")
     }
 });
 
-pub static SIDEBAR_STATS: Lazy<String> = Lazy::new(|| {
+pub static SIDEBAR_STATS: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("display", "grid")
         .style("gap", "0.75rem")
@@ -251,7 +221,7 @@ pub static SIDEBAR_STATS: Lazy<String> = Lazy::new(|| {
     }
 });
 
-pub static SIDEBAR_STAT: Lazy<String> = Lazy::new(|| {
+pub static SIDEBAR_STAT: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("padding", "0.85rem 1rem")
         .style("border", format!("1px solid {}", color::LINE))
@@ -264,7 +234,7 @@ pub static SIDEBAR_STAT: Lazy<String> = Lazy::new(|| {
 // Section headers
 // ---------------------------------------------------------------------------
 
-pub static SECTION_HEADER: Lazy<String> = Lazy::new(|| {
+pub static SECTION_HEADER: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("display", "flex")
         .style("align-items", "center")
@@ -274,7 +244,7 @@ pub static SECTION_HEADER: Lazy<String> = Lazy::new(|| {
     }
 });
 
-pub static SECTION_MARK: Lazy<String> = Lazy::new(|| {
+pub static SECTION_MARK: LazyLock<String> = LazyLock::new(|| {
     class! {
         .pseudo!("::before", {
             .style("content", "\"\"")
@@ -287,7 +257,7 @@ pub static SECTION_MARK: Lazy<String> = Lazy::new(|| {
     }
 });
 
-pub static SECTION_LINK: Lazy<String> = Lazy::new(|| {
+pub static SECTION_LINK: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("color", color::BLUE)
         .style("font-size", "0.78rem")
@@ -304,7 +274,7 @@ pub static SECTION_LINK: Lazy<String> = Lazy::new(|| {
 // Deal cards
 // ---------------------------------------------------------------------------
 
-pub static DEAL_GRID: Lazy<String> = Lazy::new(|| {
+pub static DEAL_GRID: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("display", "grid")
         .style("grid-template-columns", "repeat(auto-fill, minmax(min(14rem, 100%), 1fr))")
@@ -312,7 +282,7 @@ pub static DEAL_GRID: Lazy<String> = Lazy::new(|| {
     }
 });
 
-pub static DEAL_CARD: Lazy<String> = Lazy::new(|| {
+pub static DEAL_CARD: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("border", format!("1px solid {}", color::LINE))
         .style("border-radius", "0.6rem")
@@ -327,7 +297,7 @@ pub static DEAL_CARD: Lazy<String> = Lazy::new(|| {
     }
 });
 
-pub static DEAL_VISUAL: Lazy<String> = Lazy::new(|| {
+pub static DEAL_VISUAL: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("position", "relative")
         .style("height", "10rem")
@@ -335,31 +305,31 @@ pub static DEAL_VISUAL: Lazy<String> = Lazy::new(|| {
     }
 });
 
-pub static DEAL_VISUAL_RED: Lazy<String> = Lazy::new(|| {
+pub static DEAL_VISUAL_RED: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("background", "linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%)")
     }
 });
 
-pub static DEAL_VISUAL_SILVER: Lazy<String> = Lazy::new(|| {
+pub static DEAL_VISUAL_SILVER: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("background", "linear-gradient(135deg, #89f7fe 0%, #66a6ff 100%)")
     }
 });
 
-pub static DEAL_VISUAL_YELLOW: Lazy<String> = Lazy::new(|| {
+pub static DEAL_VISUAL_YELLOW: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("background", "linear-gradient(135deg, #ffd200 0%, #f7971e 100%)")
     }
 });
 
-pub static DEAL_VISUAL_WHITE: Lazy<String> = Lazy::new(|| {
+pub static DEAL_VISUAL_WHITE: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("background", "linear-gradient(135deg, #6c5ce7 0%, #a29bfe 100%)")
     }
 });
 
-pub static DEAL_BADGE: Lazy<String> = Lazy::new(|| {
+pub static DEAL_BADGE: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("position", "absolute")
         .style("top", "0.65rem")
@@ -376,7 +346,7 @@ pub static DEAL_BADGE: Lazy<String> = Lazy::new(|| {
     }
 });
 
-pub static DEAL_CALLOUT: Lazy<String> = Lazy::new(|| {
+pub static DEAL_CALLOUT: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("position", "absolute")
         .style("right", "0.65rem")
@@ -389,13 +359,13 @@ pub static DEAL_CALLOUT: Lazy<String> = Lazy::new(|| {
     }
 });
 
-pub static DEAL_BODY: Lazy<String> = Lazy::new(|| {
+pub static DEAL_BODY: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("padding", "0.85rem")
     }
 });
 
-pub static PRICE_ROW: Lazy<String> = Lazy::new(|| {
+pub static PRICE_ROW: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("display", "flex")
         .style("align-items", "baseline")
@@ -404,7 +374,7 @@ pub static PRICE_ROW: Lazy<String> = Lazy::new(|| {
     }
 });
 
-pub static PROGRESS_HEAD: Lazy<String> = Lazy::new(|| {
+pub static PROGRESS_HEAD: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("display", "flex")
         .style("justify-content", "space-between")
@@ -413,7 +383,7 @@ pub static PROGRESS_HEAD: Lazy<String> = Lazy::new(|| {
     }
 });
 
-pub static PROGRESS_BAR: Lazy<String> = Lazy::new(|| {
+pub static PROGRESS_BAR: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("height", "0.35rem")
         .style("margin-top", "0.4rem")
@@ -423,7 +393,7 @@ pub static PROGRESS_BAR: Lazy<String> = Lazy::new(|| {
     }
 });
 
-pub static PROGRESS_FILL: Lazy<String> = Lazy::new(|| {
+pub static PROGRESS_FILL: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("height", "100%")
         .style("border-radius", "999px")
@@ -435,7 +405,7 @@ pub static PROGRESS_FILL: Lazy<String> = Lazy::new(|| {
 // Buttons
 // ---------------------------------------------------------------------------
 
-pub static BUTTON: Lazy<String> = Lazy::new(|| {
+pub static BUTTON: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("display", "inline-flex")
         .style("align-items", "center")
@@ -459,7 +429,7 @@ pub static BUTTON: Lazy<String> = Lazy::new(|| {
     }
 });
 
-pub static BUTTON_PRIMARY: Lazy<String> = Lazy::new(|| {
+pub static BUTTON_PRIMARY: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("background", color::GRADIENT_BRAND)
         .style("color", "#ffffff")
@@ -467,14 +437,14 @@ pub static BUTTON_PRIMARY: Lazy<String> = Lazy::new(|| {
     }
 });
 
-pub static BUTTON_SOFT: Lazy<String> = Lazy::new(|| {
+pub static BUTTON_SOFT: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("background", "rgba(0, 0, 0, 0.03)")
         .style("color", color::INK)
     }
 });
 
-pub static BUTTON_DARK: Lazy<String> = Lazy::new(|| {
+pub static BUTTON_DARK: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("width", "100%")
         .style("margin-top", "0.65rem")
@@ -484,7 +454,7 @@ pub static BUTTON_DARK: Lazy<String> = Lazy::new(|| {
     }
 });
 
-pub static BUTTON_GRADIENT: Lazy<String> = Lazy::new(|| {
+pub static BUTTON_GRADIENT: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("background", color::GRADIENT_BRAND)
         .style("color", "#ffffff")
@@ -492,7 +462,7 @@ pub static BUTTON_GRADIENT: Lazy<String> = Lazy::new(|| {
     }
 });
 
-pub static DEAL_META: Lazy<String> = Lazy::new(|| {
+pub static DEAL_META: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("margin-top", "0.5rem")
         .style("color", color::MUTED)
@@ -505,7 +475,7 @@ pub static DEAL_META: Lazy<String> = Lazy::new(|| {
 // Feed card (sidebar)
 // ---------------------------------------------------------------------------
 
-pub static FEED_CARD: Lazy<String> = Lazy::new(|| {
+pub static FEED_CARD: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("border", format!("1px solid {}", color::LINE))
         .style("border-radius", "0.6rem")
@@ -515,14 +485,14 @@ pub static FEED_CARD: Lazy<String> = Lazy::new(|| {
     }
 });
 
-pub static FEED_HEADER: Lazy<String> = Lazy::new(|| {
+pub static FEED_HEADER: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("padding", "0.85rem 1rem")
         .style("border-bottom", format!("1px solid {}", color::BORDER_SOFT))
     }
 });
 
-pub static FEED_TITLE: Lazy<String> = Lazy::new(|| {
+pub static FEED_TITLE: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("display", "flex")
         .style("align-items", "center")
@@ -541,14 +511,14 @@ pub static FEED_TITLE: Lazy<String> = Lazy::new(|| {
     }
 });
 
-pub static FEED_ITEM: Lazy<String> = Lazy::new(|| {
+pub static FEED_ITEM: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("padding", "0.75rem 1rem")
         .style("border-bottom", format!("1px solid {}", color::BORDER_SOFT))
     }
 });
 
-pub static FEED_FOOTER: Lazy<String> = Lazy::new(|| {
+pub static FEED_FOOTER: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("padding", "0.75rem 1rem")
     }
@@ -558,7 +528,7 @@ pub static FEED_FOOTER: Lazy<String> = Lazy::new(|| {
 // Signal strip (value props)
 // ---------------------------------------------------------------------------
 
-pub static SIGNAL_GRID: Lazy<String> = Lazy::new(|| {
+pub static SIGNAL_GRID: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("display", "grid")
         .style("grid-template-columns", "repeat(auto-fit, minmax(16rem, 1fr))")
@@ -567,7 +537,7 @@ pub static SIGNAL_GRID: Lazy<String> = Lazy::new(|| {
     }
 });
 
-pub static SIGNAL_CARD: Lazy<String> = Lazy::new(|| {
+pub static SIGNAL_CARD: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("padding", "1.15rem")
         .style("border", format!("1px solid {}", color::LINE))
@@ -581,7 +551,7 @@ pub static SIGNAL_CARD: Lazy<String> = Lazy::new(|| {
 // Story section (how it works / why)
 // ---------------------------------------------------------------------------
 
-pub static STORY_GRID: Lazy<String> = Lazy::new(|| {
+pub static STORY_GRID: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("display", "grid")
         .style("grid-template-columns", "repeat(auto-fit, minmax(20rem, 1fr))")
@@ -590,7 +560,7 @@ pub static STORY_GRID: Lazy<String> = Lazy::new(|| {
     }
 });
 
-pub static PANEL: Lazy<String> = Lazy::new(|| {
+pub static PANEL: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("padding", "1.25rem")
         .style("border", format!("1px solid {}", color::LINE))
@@ -600,7 +570,7 @@ pub static PANEL: Lazy<String> = Lazy::new(|| {
     }
 });
 
-pub static STEP_GRID: Lazy<String> = Lazy::new(|| {
+pub static STEP_GRID: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("display", "grid")
         .style("grid-template-columns", "repeat(auto-fit, minmax(12rem, 1fr))")
@@ -609,7 +579,7 @@ pub static STEP_GRID: Lazy<String> = Lazy::new(|| {
     }
 });
 
-pub static STEP_CARD: Lazy<String> = Lazy::new(|| {
+pub static STEP_CARD: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("padding", "0.85rem")
         .style("border", format!("1px solid {}", color::LINE))
@@ -618,7 +588,7 @@ pub static STEP_CARD: Lazy<String> = Lazy::new(|| {
     }
 });
 
-pub static INFO_LIST: Lazy<String> = Lazy::new(|| {
+pub static INFO_LIST: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("display", "grid")
         .style("gap", "0.75rem")
@@ -626,7 +596,7 @@ pub static INFO_LIST: Lazy<String> = Lazy::new(|| {
     }
 });
 
-pub static INFO_ITEM: Lazy<String> = Lazy::new(|| {
+pub static INFO_ITEM: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("padding", "0.85rem")
         .style("border", format!("1px solid {}", color::LINE))
@@ -639,7 +609,7 @@ pub static INFO_ITEM: Lazy<String> = Lazy::new(|| {
 // Notes
 // ---------------------------------------------------------------------------
 
-pub static NOTE: Lazy<String> = Lazy::new(|| {
+pub static NOTE: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("margin-top", "0")
         .style("padding", "0.75rem 0.85rem")
@@ -656,7 +626,7 @@ pub static NOTE: Lazy<String> = Lazy::new(|| {
 // Footer
 // ---------------------------------------------------------------------------
 
-pub static FOOTER: Lazy<String> = Lazy::new(|| {
+pub static FOOTER: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("margin-top", "2rem")
         .style("padding", "1.25rem 0")
@@ -664,7 +634,7 @@ pub static FOOTER: Lazy<String> = Lazy::new(|| {
     }
 });
 
-pub static FOOTER_LINK: Lazy<String> = Lazy::new(|| {
+pub static FOOTER_LINK: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("color", color::BLUE)
         .style("text-decoration", "none")
@@ -678,7 +648,7 @@ pub static FOOTER_LINK: Lazy<String> = Lazy::new(|| {
 // Legal pages
 // ---------------------------------------------------------------------------
 
-pub static LEGAL_HERO: Lazy<String> = Lazy::new(|| {
+pub static LEGAL_HERO: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("margin-top", "1rem")
         .style("padding", "clamp(1.25rem, 2.5vw, 2rem) clamp(1.5rem, 3vw, 2.5rem)")
@@ -688,7 +658,7 @@ pub static LEGAL_HERO: Lazy<String> = Lazy::new(|| {
     }
 });
 
-pub static CARD: Lazy<String> = Lazy::new(|| {
+pub static CARD: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("margin-top", "1rem")
         .style("padding", "clamp(1.25rem, 2vw, 2rem)")
@@ -699,7 +669,7 @@ pub static CARD: Lazy<String> = Lazy::new(|| {
     }
 });
 
-pub static LEGAL_BODY: Lazy<String> = Lazy::new(|| {
+pub static LEGAL_BODY: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("color", color::INK)
         .style("font-size", "1rem")

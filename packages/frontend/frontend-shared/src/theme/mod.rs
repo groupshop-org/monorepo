@@ -1,7 +1,4 @@
 pub mod chrome;
 pub mod color;
+pub mod stylesheet;
 pub mod typography;
-
-pub fn init() {
-    chrome::init();
-}
