@@ -7,6 +7,10 @@ cloudflare/api/db/local
 .dev.vars
 build/
 
+# Solana
+test-ledger
+.deployments
+
 # Logs
 *.log
 

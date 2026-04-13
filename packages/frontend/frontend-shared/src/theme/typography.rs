@@ -1,9 +1,10 @@
+use std::sync::LazyLock;
+
 use dominator::class;
-use once_cell::sync::Lazy;
 
 use crate::theme::color;
 
-pub static NAV_LABEL: Lazy<String> = Lazy::new(|| {
+pub static NAV_LABEL: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("font-size", "0.8rem")
         .style("font-weight", "600")
@@ -11,7 +12,7 @@ pub static NAV_LABEL: Lazy<String> = Lazy::new(|| {
     }
 });
 
-pub static EYEBROW: Lazy<String> = Lazy::new(|| {
+pub static EYEBROW: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("margin", "0 0 0.25rem")
         .style("font-size", "0.72rem")
@@ -22,7 +23,7 @@ pub static EYEBROW: Lazy<String> = Lazy::new(|| {
     }
 });
 
-pub static BANNER_TITLE: Lazy<String> = Lazy::new(|| {
+pub static BANNER_TITLE: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("margin", "0")
         .style("font-size", "clamp(1.6rem, 3.5vw, 2.6rem)")
@@ -33,7 +34,7 @@ pub static BANNER_TITLE: Lazy<String> = Lazy::new(|| {
     }
 });
 
-pub static STAT_LABEL: Lazy<String> = Lazy::new(|| {
+pub static STAT_LABEL: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("font-size", "0.72rem")
         .style("font-weight", "600")
@@ -43,7 +44,7 @@ pub static STAT_LABEL: Lazy<String> = Lazy::new(|| {
     }
 });
 
-pub static STAT_VALUE: Lazy<String> = Lazy::new(|| {
+pub static STAT_VALUE: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("margin-top", "0.25rem")
         .style("font-size", "clamp(1.8rem, 3vw, 2.8rem)")
@@ -53,7 +54,7 @@ pub static STAT_VALUE: Lazy<String> = Lazy::new(|| {
     }
 });
 
-pub static METRIC_VALUE: Lazy<String> = Lazy::new(|| {
+pub static METRIC_VALUE: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("color", color::INK)
         .style("font-size", "1.15rem")
@@ -62,7 +63,7 @@ pub static METRIC_VALUE: Lazy<String> = Lazy::new(|| {
     }
 });
 
-pub static METRIC_LABEL: Lazy<String> = Lazy::new(|| {
+pub static METRIC_LABEL: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("margin-top", "0.15rem")
         .style("color", color::MUTED)
@@ -73,7 +74,7 @@ pub static METRIC_LABEL: Lazy<String> = Lazy::new(|| {
     }
 });
 
-pub static SECTION_TITLE: Lazy<String> = Lazy::new(|| {
+pub static SECTION_TITLE: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("display", "flex")
         .style("align-items", "center")
@@ -86,7 +87,7 @@ pub static SECTION_TITLE: Lazy<String> = Lazy::new(|| {
     }
 });
 
-pub static LEAD_TEXT: Lazy<String> = Lazy::new(|| {
+pub static LEAD_TEXT: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("max-width", "46rem")
         .style("margin", "0.75rem 0 0")
@@ -96,7 +97,7 @@ pub static LEAD_TEXT: Lazy<String> = Lazy::new(|| {
     }
 });
 
-pub static CARD_TITLE: Lazy<String> = Lazy::new(|| {
+pub static CARD_TITLE: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("color", color::INK)
         .style("font-size", "1rem")
@@ -105,7 +106,7 @@ pub static CARD_TITLE: Lazy<String> = Lazy::new(|| {
     }
 });
 
-pub static VISUAL_WORD: Lazy<String> = Lazy::new(|| {
+pub static VISUAL_WORD: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("position", "absolute")
         .style("left", "0.75rem")
@@ -120,7 +121,7 @@ pub static VISUAL_WORD: Lazy<String> = Lazy::new(|| {
     }
 });
 
-pub static VISUAL_CALLOUT: Lazy<String> = Lazy::new(|| {
+pub static VISUAL_CALLOUT: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("color", color::INK)
         .style("font-size", "0.78rem")
@@ -128,7 +129,7 @@ pub static VISUAL_CALLOUT: Lazy<String> = Lazy::new(|| {
     }
 });
 
-pub static PRICE_NOW: Lazy<String> = Lazy::new(|| {
+pub static PRICE_NOW: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("color", color::INK)
         .style("font-size", "1.5rem")
@@ -137,7 +138,7 @@ pub static PRICE_NOW: Lazy<String> = Lazy::new(|| {
     }
 });
 
-pub static PRICE_THEN: Lazy<String> = Lazy::new(|| {
+pub static PRICE_THEN: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("color", color::SUBTLE)
         .style("font-size", "0.85rem")
@@ -146,7 +147,7 @@ pub static PRICE_THEN: Lazy<String> = Lazy::new(|| {
     }
 });
 
-pub static MICRO_LABEL: Lazy<String> = Lazy::new(|| {
+pub static MICRO_LABEL: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("color", color::MUTED)
         .style("font-size", "0.7rem")
@@ -156,7 +157,7 @@ pub static MICRO_LABEL: Lazy<String> = Lazy::new(|| {
     }
 });
 
-pub static MINI_HEADING: Lazy<String> = Lazy::new(|| {
+pub static MINI_HEADING: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("color", color::INK)
         .style("font-size", "1rem")
@@ -165,7 +166,7 @@ pub static MINI_HEADING: Lazy<String> = Lazy::new(|| {
     }
 });
 
-pub static BODY: Lazy<String> = Lazy::new(|| {
+pub static BODY: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("color", color::INK)
         .style("font-size", "1rem")
@@ -173,7 +174,7 @@ pub static BODY: Lazy<String> = Lazy::new(|| {
     }
 });
 
-pub static BODY_MUTED: Lazy<String> = Lazy::new(|| {
+pub static BODY_MUTED: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("color", color::MUTED)
         .style("font-size", "0.92rem")
@@ -181,7 +182,7 @@ pub static BODY_MUTED: Lazy<String> = Lazy::new(|| {
     }
 });
 
-pub static FEED_NAME: Lazy<String> = Lazy::new(|| {
+pub static FEED_NAME: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("color", color::INK)
         .style("font-size", "0.86rem")
@@ -189,7 +190,7 @@ pub static FEED_NAME: Lazy<String> = Lazy::new(|| {
     }
 });
 
-pub static FEED_TEXT: Lazy<String> = Lazy::new(|| {
+pub static FEED_TEXT: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("margin", "0.2rem 0 0")
         .style("color", color::MUTED)
@@ -198,14 +199,14 @@ pub static FEED_TEXT: Lazy<String> = Lazy::new(|| {
     }
 });
 
-pub static FOOTER_TEXT: Lazy<String> = Lazy::new(|| {
+pub static FOOTER_TEXT: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("color", color::MUTED)
         .style("font-size", "0.88rem")
     }
 });
 
-pub static LEGAL_TITLE: Lazy<String> = Lazy::new(|| {
+pub static LEGAL_TITLE: LazyLock<String> = LazyLock::new(|| {
     class! {
         .style("margin", "0")
         .style("font-size", "clamp(1.6rem, 3.5vw, 2.6rem)")

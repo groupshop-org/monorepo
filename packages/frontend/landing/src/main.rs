@@ -3,8 +3,8 @@ mod legal;
 
 use dominator::{append_dom, body, html, Dom};
 use groupshop_frontend_shared::{
-    document, theme,
-    theme::{chrome, typography},
+    document,
+    theme::{self, chrome, typography},
     window,
 };
 
@@ -18,7 +18,7 @@ enum Route {
 }
 
 fn main() {
-    theme::init();
+    theme::stylesheet::init();
 
     let route = current_route();
     let title = page_title(&route);

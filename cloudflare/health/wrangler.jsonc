@@ -1,0 +1,10 @@
+{
+  "name": "groupshop-health",
+  "main": "../../packages/backend/health/build/index.js",
+  "compatibility_date": "2025-03-10",
+  "observability": {
+    "logs": {
+      "enabled": true
+    }
+  }
+}

@@ -1,0 +1,33 @@
+version: "3"
+
+includes:
+  config:
+    taskfile: ../config.yml
+    flatten: true
+
+tasks:
+  scratch:
+    desc: "Deploy the market program and invoke it"
+    cmds:
+      - task: build-and-deploy
+      - task: step-1
+
+  build-and-deploy:
+    internal: true
+    cmds:
+      - task solana-programs:build-dev
+      - task solana-programs:deploy-local
+
+  step-1:
+    internal: true
+    vars:
+      MARKET_PROGRAM_ID:
+        sh: task solana-programs:id-market-local
+    cmds:
+      - |
+        echo "Market Program ID: {{.MARKET_PROGRAM_ID}}"
+      - >
+        task cli:exec --
+        --rpc-url {{.URL_SOLANA_VALIDATOR_RPC_DEV}}
+        invoke
+        "{{.MARKET_PROGRAM_ID}}"

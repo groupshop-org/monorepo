@@ -1,0 +1,24 @@
+version: "3"
+
+includes:
+  config:
+    taskfile: ../config.yml
+    flatten: true
+
+vars:
+  PATH_TRUNK_DIST_HEALTH: '{{joinPath .PATH_TRUNK_DIST "health"}}'
+
+tasks:
+  dev:
+    desc: "Run the health dashboard in development mode"
+    dir: "{{.PATH_PACKAGE_HEALTH_DASHBOARD}}"
+    env:
+      URL_HEALTH_API: "{{.URL_HEALTH_DEV}}"
+    cmds:
+      - >
+        NO_COLOR=true trunk serve
+        --port {{.PORT_HEALTH_DASHBOARD_DEV}}
+        --dist "{{.PATH_TRUNK_DIST_HEALTH}}"
+        --watch "{{.PATH_PACKAGE_FRONTEND_SHARED}}"
+        --watch "{{.PATH_ROOT_CARGO_TOML}}"
+        --watch "."
