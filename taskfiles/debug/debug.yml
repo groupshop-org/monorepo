@@ -1,0 +1,13 @@
+version: "3"
+
+includes:
+  config:
+    taskfile: ../config.yml
+    flatten: true
+
+tasks:
+  scratch:
+    desc: "Just a scratch task to debug a current problem"
+    cmds:
+      - >
+        task solana-programs:deploy-local

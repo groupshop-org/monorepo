@@ -1,0 +1,49 @@
+version: "3"
+
+includes:
+  config:
+    taskfile: ../config.yml
+    flatten: true
+
+tasks:
+  dev:
+    desc: "Run the health check worker in development mode"
+    deps: ["build-dev-once"]
+    cmds:
+      - task: dev-inner
+
+  build-dev-once:
+    internal: true
+    dir: "{{.PATH_PACKAGE_HEALTH_BACKEND}}"
+    cmds:
+      - worker-build --dev
+
+  dev-inner:
+    internal: true
+    deps: ["watch-dev", "wrangler-dev"]
+
+  watch-dev:
+    internal: true
+    dir: "{{.PATH_PACKAGE_HEALTH_BACKEND}}"
+    cmds:
+      - >
+        watchexec
+        -w "{{.PATH_ROOT_CARGO_TOML}}"
+        -w "{{.PATH_PACKAGE_HEALTH_BACKEND}}"
+        worker-build --dev
+
+  wrangler-dev:
+    internal: true
+    cmds:
+      - >
+        wrangler dev
+        -c "{{.PATH_CLOUDFLARE_HEALTH_WRANGLER_CONFIG}}"
+        --local
+        --log-level info
+        --show-interactive-dev-session=false
+        --port {{.PORT_HEALTH_DEV}}
+        --var "URL_API:{{.URL_API_DEV}}"
+        --var "URL_LANDING:{{.URL_LANDING_DEV}}"
+        --var "URL_LANDING_MEDIA:{{.URL_LANDING_MEDIA_DEV}}"
+        --var "URL_SOLANA_RPC:{{.URL_SOLANA_VALIDATOR_RPC_DEV}}"
+        --var "ALLOWED_ORIGIN:{{.URL_HEALTH_DASHBOARD_DEV}}"

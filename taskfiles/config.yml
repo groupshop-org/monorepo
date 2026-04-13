@@ -6,6 +6,7 @@ vars:
     sh: git rev-parse --show-toplevel
   PATH_PACKAGES_FRONTEND: '{{joinPath .PATH_REPO_ROOT "packages" "frontend"}}'
   PATH_PACKAGES_BACKEND: '{{joinPath .PATH_REPO_ROOT "packages" "backend"}}'
+  PATH_PACKAGES_SOLANA_PROGRAMS: '{{joinPath .PATH_REPO_ROOT "packages" "solana-programs"}}'
   PATH_CLOUDFLARE_API: '{{joinPath .PATH_REPO_ROOT "cloudflare" "api"}}'
   PATH_CLOUDFLARE_API_WRANGLER_CONFIG: '{{joinPath .PATH_CLOUDFLARE_API "wrangler.jsonc"}}'
   PATH_TRUNK_DIST: '{{joinPath .PATH_REPO_ROOT ".trunk-dist"}}'
@@ -13,7 +14,12 @@ vars:
   PATH_PACKAGE_FRONTEND_SHARED: '{{joinPath .PATH_PACKAGES_FRONTEND "frontend-shared"}}'
   PATH_PACKAGE_LANDING: '{{joinPath .PATH_PACKAGES_FRONTEND "landing"}}'
   PATH_PACKAGE_API: '{{joinPath .PATH_PACKAGES_BACKEND "api"}}'
+  PATH_CLOUDFLARE_HEALTH: '{{joinPath .PATH_REPO_ROOT "cloudflare" "health"}}'
+  PATH_CLOUDFLARE_HEALTH_WRANGLER_CONFIG: '{{joinPath .PATH_CLOUDFLARE_HEALTH "wrangler.jsonc"}}'
+  PATH_PACKAGE_HEALTH_BACKEND: '{{joinPath .PATH_PACKAGES_BACKEND "health"}}'
+  PATH_PACKAGE_HEALTH_DASHBOARD: '{{joinPath .PATH_PACKAGES_FRONTEND "health"}}'
   PATH_DB_DEV: '{{joinPath .PATH_CLOUDFLARE_API "db" "local" "dev"}}'
+  PATH_TARGET_DEPLOY: '{{joinPath .PATH_REPO_ROOT "target" "deploy"}}'
 
   # MEDIA
   PATH_MEDIA_LANDING: '{{joinPath .PATH_REPO_ROOT "media" "landing"}}'
@@ -22,6 +28,12 @@ vars:
   PORT_API_DEV: 9081
   PORT_LANDING_DEV: 9082
   PORT_LANDING_MEDIA_DEV: 9083
+  PORT_SOLANA_VALIDTOR_DEV_GOSSIP: 9084
+  PORT_SOLANA_VALIDTOR_DEV_FAUCET: 9085
+  PORT_SOLANA_VALIDTOR_DEV_RPC: 9086
+  PORT_SOLANA_VALIDTOR_DEV_WEBSOCKET: 9087 # Automatically one after RPC
+  PORT_HEALTH_DEV: 9088
+  PORT_HEALTH_DASHBOARD_DEV: 9089
 
   # URLS
   URL_API_DEV: "http://127.0.0.1:{{.PORT_API_DEV}}"
@@ -29,6 +41,9 @@ vars:
   URL_LANDING_DEV: "http://127.0.0.1:{{.PORT_LANDING_DEV}}"
   URL_LANDING_PROD: "https://groupshop.com"
   URL_LANDING_MEDIA_DEV: "http://localhost:{{.PORT_LANDING_MEDIA_DEV}}"
+  URL_SOLANA_VALIDATOR_RPC_DEV: "http://localhost:{{.PORT_SOLANA_VALIDTOR_DEV_RPC}}"
+  URL_HEALTH_DEV: "http://localhost:{{.PORT_HEALTH_DEV}}"
+  URL_HEALTH_DASHBOARD_DEV: "http://localhost:{{.PORT_HEALTH_DASHBOARD_DEV}}"
 
   # CLOUDFLARE BINDINGS
   CF_BINDING_DB: "DB_GROUPSHOP"

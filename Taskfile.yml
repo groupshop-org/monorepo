@@ -8,21 +8,53 @@ includes:
   config: ./taskfiles/config.yml
   db: ./taskfiles/backend/db.yml
   api: ./taskfiles/backend/api.yml
+  health: ./taskfiles/backend/health.yml
   landing: ./taskfiles/frontend/landing.yml
+  health-dashboard: ./taskfiles/frontend/health.yml
+  solana-programs: ./taskfiles/solana/programs.yml
+  solana-validator: ./taskfiles/solana/validator.yml
+  debug: ./taskfiles/debug/debug.yml
 
 tasks:
   lint:
     cmds:
       - cargo fmt --all -- --check
       - cargo check -p groupshop-landing --target wasm32-unknown-unknown
+      - cargo check -p groupshop-health-dashboard --target wasm32-unknown-unknown
       - cargo check -p groupshop-api --target wasm32-unknown-unknown
+      - cargo check -p groupshop-health --target wasm32-unknown-unknown
 
-  everything-deploy:
+  deploy:
     desc: "Deploy everything"
     cmds:
       - task api:deploy
       - task landing:deploy
 
-  everything-dev:
+  dev:
     desc: "Run everything in development mode"
-    deps: [api:dev, landing:dev]
+    deps:
+      [
+        api:dev,
+        landing:dev,
+        solana-validator:dev,
+        solana-programs:dev,
+        health:dev,
+        health-dashboard:dev,
+        inner-wait-all-ready,
+      ]
+
+  inner-wait-all-ready:
+    internal: true
+    cmds:
+      - |
+        echo "Waiting for all services..."
+        for i in $(seq 1 120); do
+          RESULT=$(curl -s "http://localhost:{{.PORT_HEALTH_DEV}}/status" 2>/dev/null || echo '{}')
+          if echo "$RESULT" | grep -q '"all_healthy":true'; then
+            sleep 2
+            printf '\n\033[1;36m  ╔════════════════════════════════════════════╗\n  ║                                            ║\n  ║      ALL SYSTEMS READY                     ║\n  ║      GROUPSHOP DEV ENVIRONMENT IS LIVE     ║\n  ║                                            ║\n  ╚════════════════════════════════════════════╝\n\033[0m\n'
+            exit 0
+          fi
+          sleep 2
+        done
+        echo "Warning: timed out waiting for all services to be healthy"
