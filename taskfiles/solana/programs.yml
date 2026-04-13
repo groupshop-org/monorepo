@@ -19,11 +19,13 @@ tasks:
   deploy-local:
     desc: "Deploy the solana programs to the local cluster"
     cmds:
+      - mkdir -p "{{.PATH_DEPLOYMENTS_LOCAL}}"
       - >
         solana program deploy
         --output json
         --url {{.URL_SOLANA_VALIDATOR_RPC_DEV}}
         "{{.PATH_ARTIFACT_PROGRAM_MARKET}}"
+        > "{{.PATH_DEPLOYMENT_MARKET_PROGRAM_LOCAL}}"
 
   build-release:
     desc: "Build the solana programs"
@@ -36,3 +38,9 @@ tasks:
     dir: "{{.PATH_PACKAGE_PROGRAM_MARKET}}"
     cmds:
       - cargo build-sbf --debug
+      -
+
+  id-market-local:
+    desc: "Get the program ID of the locally deployed market program"
+    cmds:
+      - jq -r .programId "{{.PATH_DEPLOYMENT_MARKET_PROGRAM_LOCAL}}"

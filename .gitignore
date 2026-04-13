@@ -9,6 +9,7 @@ build/
 
 # Solana
 test-ledger
+.deployments
 
 # Logs
 *.log

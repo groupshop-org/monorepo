@@ -20,6 +20,8 @@ vars:
   PATH_PACKAGE_HEALTH_DASHBOARD: '{{joinPath .PATH_PACKAGES_FRONTEND "health"}}'
   PATH_DB_DEV: '{{joinPath .PATH_CLOUDFLARE_API "db" "local" "dev"}}'
   PATH_TARGET_DEPLOY: '{{joinPath .PATH_REPO_ROOT "target" "deploy"}}'
+  PATH_DEPLOYMENTS_LOCAL: '{{joinPath .PATH_REPO_ROOT ".deployments" "local"}}'
+  PATH_DEPLOYMENT_MARKET_PROGRAM_LOCAL: '{{joinPath .PATH_DEPLOYMENTS_LOCAL "market-program.json"}}'
 
   # MEDIA
   PATH_MEDIA_LANDING: '{{joinPath .PATH_REPO_ROOT "media" "landing"}}'
