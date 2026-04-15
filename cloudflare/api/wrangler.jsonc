@@ -7,6 +7,18 @@
     "dev": {
       "workers_dev": true,
       "preview_urls": true,
+      "durable_objects": {
+        "bindings": [
+          {
+            "name": "DO_GROUPSHOP_AUTH_TOKEN_REFRESH",
+            "class_name": "AuthTokenRefreshDo",
+          },
+          {
+            "name": "DO_GROUPSHOP_AUTH_TOKEN_ONCE",
+            "class_name": "AuthTokenOnceDo",
+          },
+        ],
+      },
       "d1_databases": [
         {
           "binding": "DB_GROUPSHOP",
@@ -20,7 +32,28 @@
       "workers_dev": false,
       "preview_urls": false,
       "vars": {
+        "APP_ENV": "prod",
+        "ALLOWED_ORIGINS": "https://groupshop.org",
+        "AUTH_COOKIE_SAMESITE": "strict",
         "DB_BINDING": "DB_GROUPSHOP",
+        "DO_BINDING_AUTH_TOKEN_REFRESH": "DO_GROUPSHOP_AUTH_TOKEN_REFRESH",
+        "DO_BINDING_AUTH_TOKEN_ONCE": "DO_GROUPSHOP_AUTH_TOKEN_ONCE",
+        "OPENID_GOOGLE_REDIRECT_URI": "https://api.groupshop.org/auth/openid-access-token-hook/google",
+        "URL_LANDING": "https://groupshop.org",
+        "POSTMARK_FROM_EMAIL": "notifications@groupshop.org",
+        "POSTMARK_MESSAGE_STREAM": "outbound",
+      },
+      "durable_objects": {
+        "bindings": [
+          {
+            "name": "DO_GROUPSHOP_AUTH_TOKEN_REFRESH",
+            "class_name": "AuthTokenRefreshDo",
+          },
+          {
+            "name": "DO_GROUPSHOP_AUTH_TOKEN_ONCE",
+            "class_name": "AuthTokenOnceDo",
+          },
+        ],
       },
       "d1_databases": [
         {
@@ -32,6 +65,12 @@
       ],
     },
   },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["AuthTokenRefreshDo", "AuthTokenOnceDo"],
+    },
+  ],
   "observability": {
     "enabled": true,
     "logs": {

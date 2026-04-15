@@ -9,4 +9,12 @@ rust-version.workspace = true
 
 [dependencies]
 dominator = { workspace = true }
+gloo-net = { workspace = true }
+groupshop-backend-shared = { workspace = true }
+http = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
 web-sys = { workspace = true }
+wasm-bindgen = { workspace = true }
+wasm-bindgen-futures = { workspace = true }
