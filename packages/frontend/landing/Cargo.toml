@@ -9,6 +9,10 @@ rust-version.workspace = true
 
 [dependencies]
 dominator = { workspace = true }
+futures-signals = { workspace = true }
+gloo-timers = { workspace = true }
+groupshop-backend-shared = { workspace = true }
 groupshop-frontend-shared = { workspace = true }
 wasm-bindgen = { workspace = true }
+wasm-bindgen-futures = { workspace = true }
 web-sys = { workspace = true }

@@ -64,3 +64,12 @@ tasks:
         --persist-to="{{.PATH_DB_DEV}}"
         --port {{.PORT_API_DEV}}
         --var "DB_BINDING:{{.CF_BINDING_DB}}"
+        --var "APP_ENV:dev"
+        --var "ALLOWED_ORIGINS:{{.API_ALLOWED_ORIGINS_DEV}}"
+        --var "AUTH_COOKIE_SAMESITE:none"
+        --var "DO_BINDING_AUTH_TOKEN_REFRESH:{{.CF_BINDING_DO_AUTH_TOKEN_REFRESH}}"
+        --var "DO_BINDING_AUTH_TOKEN_ONCE:{{.CF_BINDING_DO_AUTH_TOKEN_ONCE}}"
+        --var "OPENID_GOOGLE_REDIRECT_URI:{{.API_OPENID_GOOGLE_REDIRECT_URI_DEV}}"
+        --var "URL_LANDING:{{.URL_LANDING_DEV}}"
+        --var "POSTMARK_FROM_EMAIL:{{.API_POSTMARK_FROM_EMAIL}}"
+        --var "POSTMARK_MESSAGE_STREAM:{{.API_POSTMARK_MESSAGE_STREAM}}"

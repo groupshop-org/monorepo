@@ -11,5 +11,20 @@ rust-version.workspace = true
 crate-type = ["cdylib"]
 
 [dependencies]
+argon2 = { workspace = true }
+base64 = { workspace = true }
+bytes = { workspace = true }
+const-hex = { workspace = true }
+futures-util = { workspace = true }
+getrandom = { workspace = true }
 groupshop-backend-shared = { workspace = true }
+http = { workspace = true }
+js-sys = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+urlencoding = { workspace = true }
+wasm-bindgen = { workspace = true }
+wasm-streams = { workspace = true }
+web-sys = { workspace = true }
 worker = { workspace = true }

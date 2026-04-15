@@ -39,9 +39,9 @@ vars:
 
   # URLS
   URL_API_DEV: "http://127.0.0.1:{{.PORT_API_DEV}}"
-  URL_API_PROD: "https://api.groupshop.com"
+  URL_API_PROD: "https://api.groupshop.org"
   URL_LANDING_DEV: "http://127.0.0.1:{{.PORT_LANDING_DEV}}"
-  URL_LANDING_PROD: "https://groupshop.com"
+  URL_LANDING_PROD: "https://groupshop.org"
   URL_LANDING_MEDIA_DEV: "http://localhost:{{.PORT_LANDING_MEDIA_DEV}}"
   URL_SOLANA_VALIDATOR_RPC_DEV: "http://localhost:{{.PORT_SOLANA_VALIDTOR_DEV_RPC}}"
   URL_HEALTH_DEV: "http://localhost:{{.PORT_HEALTH_DEV}}"
@@ -49,3 +49,12 @@ vars:
 
   # CLOUDFLARE BINDINGS
   CF_BINDING_DB: "DB_GROUPSHOP"
+  CF_BINDING_DO_AUTH_TOKEN_REFRESH: "DO_GROUPSHOP_AUTH_TOKEN_REFRESH"
+  CF_BINDING_DO_AUTH_TOKEN_ONCE: "DO_GROUPSHOP_AUTH_TOKEN_ONCE"
+
+  # AUTH / EMAIL
+  API_ALLOWED_ORIGINS_DEV: "{{.URL_LANDING_DEV}}"
+  API_OPENID_GOOGLE_REDIRECT_URI_DEV: "{{.URL_API_DEV}}/auth/openid-access-token-hook/google"
+  API_OPENID_GOOGLE_REDIRECT_URI_PROD: "{{.URL_API_PROD}}/auth/openid-access-token-hook/google"
+  API_POSTMARK_FROM_EMAIL: "notifications@groupshop.org"
+  API_POSTMARK_MESSAGE_STREAM: "outbound"
