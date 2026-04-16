@@ -5,6 +5,9 @@ includes:
     taskfile: ../config.yml
     flatten: true
 
+vars:
+  PATH_DB_SEED_DEV_TEST_USER: '{{joinPath .PATH_CLOUDFLARE_API "db" "seeds" "dev_test_user.sql"}}'
+
 tasks:
   recreate-dev:
     desc: "Delete local dev D1 state and re-apply migrations from scratch"
@@ -13,6 +16,18 @@ tasks:
       - rm -rf "{{.PATH_DB_DEV}}"
       - mkdir -p "{{.PATH_DB_DEV}}"
       - task: migrations-apply-dev
+      - task: seed-dev
+
+  seed-dev:
+    desc: "Apply local-only baseline data to the dev D1 state"
+    cmds:
+      - >
+        wrangler d1 execute {{.CF_BINDING_DB}}
+        -c "{{.PATH_CLOUDFLARE_API_WRANGLER_CONFIG}}"
+        --env dev
+        --local=true --remote=false
+        --persist-to="{{.PATH_DB_DEV}}"
+        --file "{{.PATH_DB_SEED_DEV_TEST_USER}}"
 
   migrations-apply-dev:
     desc: "Apply local D1 migrations for development"

@@ -1,0 +1,18 @@
+[package]
+name = "groupshop-admin"
+description = "Groupshop admin dashboard"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+dominator = { workspace = true }
+futures-signals = { workspace = true }
+gloo-timers = { workspace = true }
+groupshop-backend-shared = { workspace = true }
+groupshop-frontend-shared = { workspace = true }
+wasm-bindgen = { workspace = true }
+wasm-bindgen-futures = { workspace = true }
+web-sys = { workspace = true }

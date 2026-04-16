@@ -11,3 +11,7 @@ pub fn media_url() -> &'static str {
 pub fn media_link(path: &str) -> String {
     format!("{}/{}", media_url(), path)
 }
+
+pub fn admin_url() -> &'static str {
+    required_build_env!("URL_ADMIN")
+}

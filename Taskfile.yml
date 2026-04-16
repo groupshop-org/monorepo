@@ -10,11 +10,13 @@ includes:
   api: ./taskfiles/backend/api.yml
   health: ./taskfiles/backend/health.yml
   landing: ./taskfiles/frontend/landing.yml
+  admin: ./taskfiles/frontend/admin.yml
   health-dashboard: ./taskfiles/frontend/health.yml
   solana-programs: ./taskfiles/solana/programs.yml
   solana-validator: ./taskfiles/solana/validator.yml
   cli: ./taskfiles/cli/cli.yml
   debug: ./taskfiles/debug/debug.yml
+  supplier: ./taskfiles/supplier/supplier.yml
 
 tasks:
   lint:
@@ -24,6 +26,7 @@ tasks:
       - cargo check -p groupshop-health-dashboard --target wasm32-unknown-unknown
       - cargo check -p groupshop-api --target wasm32-unknown-unknown
       - cargo check -p groupshop-health --target wasm32-unknown-unknown
+      - cargo check -p groupshop-admin --target wasm32-unknown-unknown
       - cargo check -p groupshop-cli
 
   deploy:
@@ -38,6 +41,7 @@ tasks:
       [
         api:dev,
         landing:dev,
+        admin:dev,
         solana-validator:dev,
         solana-programs:dev,
         health:dev,

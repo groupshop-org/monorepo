@@ -15,6 +15,7 @@ tasks:
     env:
       URL_API: "${URL_API_PROD}"
       URL_MEDIA: "/media"
+      URL_ADMIN: "${URL_ADMIN_PROD}"
     cmds:
       - >
         NO_COLOR=true trunk build
@@ -32,6 +33,7 @@ tasks:
     env:
       URL_API: "{{.URL_API_DEV}}"
       URL_MEDIA: "{{.URL_LANDING_MEDIA_DEV}}"
+      URL_ADMIN: "{{.URL_ADMIN_DEV}}"
     cmds:
       - >
         NO_COLOR=true trunk serve

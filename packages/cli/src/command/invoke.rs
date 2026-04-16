@@ -14,7 +14,7 @@ pub fn run(ctx: &mut CliCtx, program_id_str: &str) -> Result<()> {
     // Build a minimal instruction (no accounts, no data)
     let ix = Instruction::new_with_bytes(program_id, &[], vec![]);
     let blockhash = ctx
-        .rpc_client()
+        .rpc_client()?
         .get_latest_blockhash()
         .context("failed to get blockhash")?;
     let tx = Transaction::new_signed_with_payer(
@@ -27,7 +27,7 @@ pub fn run(ctx: &mut CliCtx, program_id_str: &str) -> Result<()> {
     // Simulate first to capture logs
     println!("Simulating transaction...");
     let sim = ctx
-        .rpc_client()
+        .rpc_client()?
         .simulate_transaction(&tx)
         .context("simulation failed")?;
 
@@ -45,7 +45,7 @@ pub fn run(ctx: &mut CliCtx, program_id_str: &str) -> Result<()> {
     // Send for real
     println!("\nSending transaction...");
     let sig = ctx
-        .rpc_client()
+        .rpc_client()?
         .send_and_confirm_transaction(&tx)
         .context("transaction failed")?;
     println!("Confirmed: {sig}");

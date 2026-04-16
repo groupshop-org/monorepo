@@ -26,14 +26,19 @@ impl CliCtx {
         }
     }
 
-    pub fn rpc_client(&mut self) -> &RpcClient {
+    pub fn rpc_client(&mut self) -> Result<&RpcClient> {
         if self._rpc_client.is_none() {
+            let url = self
+                .args
+                .rpc_url
+                .as_ref()
+                .context("--rpc-url is required for Solana commands")?;
             self._rpc_client = Some(RpcClient::new_with_commitment(
-                &self.args.rpc_url,
+                url,
                 CommitmentConfig::confirmed(),
             ));
         }
-        self._rpc_client.as_ref().unwrap()
+        Ok(self._rpc_client.as_ref().unwrap())
     }
 
     pub fn keypair(&mut self) -> Result<&Keypair> {
@@ -62,13 +67,19 @@ fn default_keypair_path() -> PathBuf {
 #[derive(Parser)]
 #[command(name = "groupshop", about = "GROUPSHOP CLI")]
 pub struct CliArgs {
-    /// Solana RPC URL (required — passed via taskfile from config.yml)
+    /// Solana RPC URL (required for Solana commands)
     #[arg(long)]
-    pub rpc_url: String,
+    pub rpc_url: Option<String>,
 
     /// Path to payer keypair JSON file
     #[arg(long, default_value_os_t = default_keypair_path())]
     pub keypair: PathBuf,
+
+    #[arg(long, env = "GROUPSHOP_CLI_API_AUTH_EMAIL", hide_env_values = true)]
+    pub api_auth_email: String,
+
+    #[arg(long, env = "GROUPSHOP_CLI_API_AUTH_PASSWORD", hide_env_values = true)]
+    pub api_auth_password: String,
 
     #[command(subcommand)]
     pub command: Command,

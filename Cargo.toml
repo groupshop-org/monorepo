@@ -1,5 +1,5 @@
 [workspace]
-members = ["packages/backend/*", "packages/frontend/*", "packages/solana-programs/*", "packages/cli"]
+members = ["packages/backend/*", "packages/frontend/*", "packages/frontend/admin", "packages/solana-programs/*", "packages/cli"]
 resolver = "2"
 
 [workspace.package]
@@ -74,5 +74,8 @@ solana-sdk = "2"
 solana-client = "2"
 
 # CLI
-clap = { version = "4", features = ["derive"] }
+clap = { version = "4", features = ["derive", "env"] }
 anyhow = "1"
+csv = "1"
+reqwest = { version = "0.12", features = ["json", "cookies"] }
+tokio = { version = "1", features = ["full"] }

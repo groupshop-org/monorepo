@@ -72,7 +72,9 @@ pub fn valid_cors_request(req: &HttpRequest, config: &Config) -> bool {
 
 fn is_request_origin_allowed(origin: Option<&HeaderValue>, config: &Config) -> bool {
     let Some(origin) = origin else {
-        return false;
+        // No Origin header means this is not a browser request (e.g. CLI, curl).
+        // Allow it — CORS is a browser-enforced mechanism.
+        return true;
     };
 
     fn normalize_origin(origin: &str) -> &str {
