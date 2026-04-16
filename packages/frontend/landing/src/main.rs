@@ -94,6 +94,7 @@ fn render(route: Route) -> Dom {
         .class(&*chrome::PAGE)
         .child(match route {
             Route::Home => render_home(),
+            Route::Product { id } => render_product_detail(id),
             Route::PrivacyPolicy => render_legal(
                 privacy_policy(),
                 "How Groupshop collects, uses, shares, and protects information in connection with the website and service.",
@@ -110,7 +111,6 @@ fn render(route: Route) -> Dom {
             Route::ChooseUsername => render_choose_username(),
             Route::OpenIdFinalize { token } => render_openid_finalize(token),
             Route::Profile => render_profile(),
-            Route::AdminUsers => render_admin_users(),
             Route::Error(err) => render_error(err),
             Route::NotFound => render_not_found(),
         })
@@ -118,17 +118,77 @@ fn render(route: Route) -> Dom {
 }
 
 fn render_home() -> Dom {
+    let products: Mutable<Option<Vec<ProductSummary>>> = Mutable::new(None);
+    let total: Mutable<u32> = Mutable::new(0);
+
+    spawn_local(clone!(products, total => async move {
+        match ApiCtx::get().client.product_list(&ProductListRequest {
+            page: 1,
+            per_page: 24,
+            category_id: None,
+            brand_id: None,
+            search: None,
+        }).await {
+            Ok(res) => {
+                total.set(res.total);
+                products.set(Some(res.products));
+            }
+            Err(_) => {
+                products.set(Some(Vec::new()));
+            }
+        }
+    }));
+
     html!("div", {
         .class(&*chrome::SHELL)
         .child(site_header())
         .child(hero_banner())
-        .child(html!("div", {
-            .class(&*chrome::MAIN_LAYOUT)
-            .child(deals_column())
-            .child(sidebar())
+        .child(html!("section", {
+            .attr("id", "products")
+            .style("margin-top", "2.5rem")
+            .child(html!("div", {
+                .class(&*chrome::SECTION_HEADER)
+                .children([
+                    section_title("Products"),
+                    html!("span", {
+                        .class(&*typography::MICRO_LABEL)
+                        .text_signal(total.signal().map(|t| {
+                            if t > 0 { format!("{t} items") } else { String::new() }
+                        }))
+                    }),
+                ])
+            }))
+            .child(html!("div", {
+                .child_signal(products.signal_cloned().map(|maybe_products| {
+                    Some(match maybe_products {
+                        None => html!("p", {
+                            .class(&*typography::BODY_MUTED)
+                            .text("Loading products...")
+                        }),
+                        Some(products) if products.is_empty() => html!("div", {
+                            .class(&*chrome::CARD)
+                            .style("text-align", "center")
+                            .style("padding", "3rem")
+                            .children([
+                                html!("p", {
+                                    .class(&*typography::LEAD_TEXT)
+                                    .text("No products available yet.")
+                                }),
+                                html!("p", {
+                                    .class(&*typography::BODY_MUTED)
+                                    .text("Check back soon — new products are being added regularly.")
+                                }),
+                            ])
+                        }),
+                        Some(products) => html!("div", {
+                            .class(&*chrome::DEAL_GRID)
+                            .children(products.into_iter().map(product_card).collect::<Vec<_>>())
+                        }),
+                    })
+                }))
+            }))
         }))
-        .child(signal_strip())
-        .child(story_section())
+        .child(how_it_works_section())
         .child(site_footer())
     })
 }
@@ -140,201 +200,126 @@ fn hero_banner() -> Dom {
             .class(&*chrome::BANNER_COPY)
             .child(html!("p", {
                 .class(&*typography::EYEBROW)
-                .text("Real-world group buying, secured on-chain")
+                .text("Group buying for wholesale prices")
             }))
             .child(html!("h1", {
                 .class(&*typography::BANNER_TITLE)
-                .text("Scale together. Pay wholesale.")
+                .text("Buy together. Pay less.")
             }))
             .child(html!("p", {
                 .class(&*typography::LEAD_TEXT)
-                .text("Browse live products, track deal thresholds, and only sign in when you're ready to save shipping details or place an order.")
+                .text("Join other buyers to meet minimum order quantities and unlock wholesale pricing on real products.")
             }))
         }))
-        .child(html!("div", {
-            .class(&*chrome::BANNER_STAT)
-            .children([
-                html!("div", {
-                    .class(&*typography::STAT_LABEL)
-                    .text("Total Locked")
-                }),
-                html!("div", {
-                    .class(&*typography::STAT_VALUE)
-                    .text("$1,242,090")
-                }),
-            ])
-        }))
     })
 }
 
-fn deals_column() -> Dom {
-    html!("div", {
-        .class(&*chrome::CONTENT_AREA)
-        .attr("id", "deals")
-        .child(html!("div", {
-            .class(&*chrome::SECTION_HEADER)
-            .children([
-                section_title("Featured Deals"),
-                html!("a", {
-                    .class(&*chrome::SECTION_LINK)
-                    .attr("href", "/#escrow")
-                    .text("View Escrow Flow →")
-                }),
-            ])
-        }))
-        .child(html!("div", {
-            .class(&*chrome::DEAL_GRID)
-            .children([
-                deal_card("Footwear", &*chrome::DEAL_VISUAL_RED, "Runner", "44% off", "Hyperion Performance Runner", "$89.00", "$160.00", "82/100 joined", "82%", "Escrow converts only after the threshold clears."),
-                deal_card("Wearables", &*chrome::DEAL_VISUAL_SILVER, "Timepiece", "51% off", "Nordic Minimalist Timepiece", "$145.00", "$295.00", "45/50 joined", "90%", "Near threshold with visible on-chain commitments."),
-                deal_card("Audio", &*chrome::DEAL_VISUAL_YELLOW, "Headphones", "43% off", "Studio Master ANC Headphones", "$199.00", "$349.00", "122/500 joined", "24%", "Large-batch savings target with transparent progress."),
-                deal_card("Workstation", &*chrome::DEAL_VISUAL_WHITE, "Keyboard", "41% off", "Mechanical Ergo Keyboard", "$110.00", "$185.00", "210/250 joined", "84%", "Crowd almost filled; pricing unlock is within reach."),
-            ])
-        }))
-    })
-}
+fn product_card(product: ProductSummary) -> Dom {
+    let price = format!("${:.2}", product.price_cents as f64 / 100.0);
+    let moq = format!("MOQ: {}", product.minimum_order_quantity);
+    let link = Route::Product {
+        id: product.id.clone(),
+    }
+    .link();
 
-fn sidebar() -> Dom {
-    html!("aside", {
-        .class(&*chrome::SIDEBAR)
-        .child(feed_card())
+    html!("a", {
+        .class(&*chrome::DEAL_CARD)
+        .attr("href", &link)
+        .style("text-decoration", "none")
+        .style("color", "inherit")
+        .style("display", "block")
         .child(html!("div", {
-            .class(&*chrome::SIDEBAR_STATS)
-            .children([
-                sidebar_stat("4", "Live Deals"),
-                sidebar_stat("44%", "Best Savings"),
-                sidebar_stat("USDC", "Escrow Rail"),
-            ])
-        }))
-    })
-}
-
-fn sidebar_stat(value: &'static str, label: &'static str) -> Dom {
-    html!("div", {
-        .class(&*chrome::SIDEBAR_STAT)
-        .children([
-            html!("div", {
-                .class(&*typography::METRIC_VALUE)
-                .text(value)
-            }),
-            html!("div", {
-                .class(&*typography::METRIC_LABEL)
-                .text(label)
-            }),
-        ])
-    })
-}
-
-fn feed_card() -> Dom {
-    html!("div", {
-        .class(&*chrome::FEED_CARD)
-        .attr("id", "escrow")
-        .child(html!("div", {
-            .class(&*chrome::FEED_HEADER)
+            .class(&*chrome::DEAL_VISUAL)
+            .class(&*chrome::DEAL_VISUAL_SILVER)
             .child(html!("div", {
-                .class(&*chrome::FEED_TITLE)
-                .text("Live Escrow Feed")
+                .class(&*chrome::DEAL_BADGE)
+                .text(product.category_id.as_str())
+            }))
+            .apply_if(!product.image_url.is_empty(), clone!(product => move |dom| {
+                dom.child(html!("img", {
+                    .attr("src", &product.image_url)
+                    .attr("alt", &product.name)
+                    .style("width", "100%")
+                    .style("height", "100%")
+                    .style("object-fit", "contain")
+                    .style("position", "absolute")
+                    .style("inset", "0")
+                }))
             }))
         }))
-        .children([
-            feed_item("jake_sol…4x9", "committed 89.00 USDC", "2 mins ago"),
-            feed_item("anon…k21", "committed 145.00 USDC", "5 mins ago"),
-            feed_item("degen_king…f2", "committed 199.00 USDC", "8 mins ago"),
-            feed_item("builder_dev", "unlocked the runner threshold", "15 mins ago"),
-        ])
         .child(html!("div", {
-            .class(&*chrome::FEED_FOOTER)
+            .class(&*chrome::DEAL_BODY)
             .child(html!("div", {
-                .class(&*chrome::NOTE)
-                .text("Browse every live product without an account. Checkout gating comes later in the order flow.")
+                .class(&*typography::CARD_TITLE)
+                .text(&product.name)
             }))
-        }))
-    })
-}
-
-fn signal_strip() -> Dom {
-    html!("section", {
-        .class(&*chrome::SIGNAL_GRID)
-        .children([
-            signal_card(
-                "Threshold unlocks",
-                "Supplier pricing only turns on after enough buyers fill the deal together.",
-            ),
-            signal_card(
-                "Visible commitments",
-                "Escrow state lives on-chain instead of in screenshots, spreadsheets, and chat threads.",
-            ),
-            signal_card(
-                "Commerce-first",
-                "The crypto layer handles trust while discovery, product choice, and fulfillment stay readable.",
-            ),
-        ])
-    })
-}
-
-fn signal_card(title: &'static str, body: &'static str) -> Dom {
-    html!("article", {
-        .class(&*chrome::SIGNAL_CARD)
-        .children([
-            html!("div", {
-                .class(&*typography::MINI_HEADING)
-                .text(title)
-            }),
-            html!("p", {
-                .class(&*typography::BODY_MUTED)
-                .text(body)
-            }),
-        ])
-    })
-}
-
-fn story_section() -> Dom {
-    html!("section", {
-        .class(&*chrome::STORY_GRID)
-        .children([
-            how_it_works_panel(),
-            why_groupshop_panel(),
-        ])
-    })
-}
-
-fn how_it_works_panel() -> Dom {
-    html!("article", {
-        .class(&*chrome::PANEL)
-        .attr("id", "how-it-works")
-        .children([
-            section_title("How It Works"),
-            html!("p", {
-                .class(&*typography::BODY_MUTED)
-                .text("The point is simple: use on-chain commitments to coordinate demand, then keep the shopping flow legible.")
-            }),
-            html!("div", {
-                .class(&*chrome::STEP_GRID)
+            .child(html!("div", {
+                .class(&*chrome::PRICE_ROW)
                 .children([
-                    step_card("01", "Join a live deal", "See the product, the threshold, and the unlocked price before committing."),
-                    step_card("02", "Commit to escrow", "Funds move into a visible Solana-native flow instead of a group admin wallet."),
-                    step_card("03", "Clear the threshold", "Once the deal fills, Groupshop handles the off-chain purchase and fulfillment path."),
+                    html!("div", {
+                        .class(&*typography::PRICE_NOW)
+                        .text(&price)
+                    }),
+                    html!("div", {
+                        .style("font-size", "0.82rem")
+                        .style("color", "#6b7280")
+                        .text(&moq)
+                    }),
+                ])
+            }))
+            .child(html!("div", {
+                .style("display", "flex")
+                .style("gap", "0.5rem")
+                .style("align-items", "center")
+                .style("margin-top", "0.4rem")
+                .children([
+                    html!("span", {
+                        .class(&*typography::MICRO_LABEL)
+                        .text(product.brand_id.as_str())
+                    }),
+                    if product.is_preorder {
+                        html!("span", {
+                            .style("font-size", "0.7rem")
+                            .style("padding", "0.15rem 0.5rem")
+                            .style("border-radius", "999px")
+                            .style("background", "rgba(245, 158, 11, 0.12)")
+                            .style("color", "#b45309")
+                            .text("Pre-order")
+                        })
+                    } else {
+                        html!("span", {})
+                    },
+                ])
+            }))
+        }))
+    })
+}
+
+fn how_it_works_section() -> Dom {
+    html!("section", {
+        .attr("id", "how-it-works")
+        .class(&*chrome::SIGNAL_GRID)
+        .style("margin-top", "3rem")
+        .children([
+            html!("article", {
+                .class(&*chrome::SIGNAL_CARD)
+                .children([
+                    html!("div", { .class(&*typography::MINI_HEADING) .text("Browse products") }),
+                    html!("p", { .class(&*typography::BODY_MUTED) .text("Explore the catalog with real wholesale pricing. No account needed to browse.") }),
                 ])
             }),
-        ])
-    })
-}
-
-fn why_groupshop_panel() -> Dom {
-    html!("article", {
-        .class(&*chrome::PANEL)
-        .children([
-            section_title("Why Groupshop"),
-            html!("p", {
-                .class(&*typography::BODY_MUTED)
-                .text("The crypto layer should make trust better, not make shopping harder. That is the design constraint.")
-            }),
-            html!("div", {
-                .class(&*chrome::INFO_LIST)
+            html!("article", {
+                .class(&*chrome::SIGNAL_CARD)
                 .children([
-                    info_item("Real products", "Built for physical goods, shipping, supplier thresholds, and real fulfillment."),
-                    info_item("Readable state", "Deal progress, savings, and escrow visibility stay obvious at a glance."),
-                    info_item("Solana-native trust", "Buyers share a transparent commitment rail instead of trusting whoever runs the chat."),
+                    html!("div", { .class(&*typography::MINI_HEADING) .text("Commit together") }),
+                    html!("p", { .class(&*typography::BODY_MUTED) .text("Join a group order to meet the minimum order quantity. More buyers means everyone saves.") }),
+                ])
+            }),
+            html!("article", {
+                .class(&*chrome::SIGNAL_CARD)
+                .children([
+                    html!("div", { .class(&*typography::MINI_HEADING) .text("Get wholesale prices") }),
+                    html!("p", { .class(&*typography::BODY_MUTED) .text("Once the group hits the threshold, orders are placed at bulk pricing and shipped to you.") }),
                 ])
             }),
         ])
@@ -349,143 +334,241 @@ fn section_title(text: &'static str) -> Dom {
     })
 }
 
-fn step_card(number: &'static str, title: &'static str, body: &'static str) -> Dom {
+fn render_product_detail(id: ProductId) -> Dom {
+    let product: Mutable<Option<Result<ProductSummary, String>>> = Mutable::new(None);
+
+    spawn_local(clone!(product => async move {
+        match ApiCtx::get().client.product_detail(&ProductDetailRequest { id }).await {
+            Ok(res) => product.set(Some(Ok(res.product))),
+            Err(e) => product.set(Some(Err(format!("{e:?}")))),
+        }
+    }));
+
     html!("div", {
-        .class(&*chrome::STEP_CARD)
+        .class(&*chrome::SHELL)
+        .child(site_header())
+        .child(html!("div", {
+            .child_signal(product.signal_cloned().map(|state| {
+                Some(match state {
+                    None => html!("div", {
+                        .style("padding", "3rem 0")
+                        .style("text-align", "center")
+                        .child(html!("p", { .class(&*typography::BODY_MUTED) .text("Loading product...") }))
+                    }),
+                    Some(Err(msg)) => html!("div", {
+                        .style("padding", "3rem 0")
+                        .style("text-align", "center")
+                        .children([
+                            html!("p", { .style("color", "#ef4444") .text(&msg) }),
+                            html!("a", {
+                                .class(&*chrome::BUTTON)
+                                .attr("href", "/")
+                                .style("margin-top", "1rem")
+                                .style("display", "inline-flex")
+                                .text("Back to products")
+                            }),
+                        ])
+                    }),
+                    Some(Ok(p)) => render_product_detail_content(p),
+                })
+            }))
+        }))
+        .child(site_footer())
+    })
+}
+
+fn render_product_detail_content(product: ProductSummary) -> Dom {
+    let price = format!("${:.2}", product.price_cents as f64 / 100.0);
+
+    html!("div", {
+        .style("display", "grid")
+        .style("grid-template-columns", "1fr 1fr")
+        .style("gap", "2rem")
+        .style("margin-top", "1.5rem")
+        .style("align-items", "start")
+        // Left: product image + info
+        .child(html!("div", {
+            // Image
+            .child(html!("div", {
+                .style("position", "relative")
+                .style("width", "100%")
+                .style("aspect-ratio", "1")
+                .style("border-radius", "0.75rem")
+                .style("overflow", "hidden")
+                .style("background", "linear-gradient(135deg, #89f7fe 0%, #66a6ff 100%)")
+                .apply_if(!product.image_url.is_empty(), clone!(product => move |dom| {
+                    dom.child(html!("img", {
+                        .attr("src", &product.image_url)
+                        .attr("alt", &product.name)
+                        .style("width", "100%")
+                        .style("height", "100%")
+                        .style("object-fit", "contain")
+                    }))
+                }))
+            }))
+            // Details below image
+            .child(html!("div", {
+                .style("margin-top", "1.5rem")
+                .class(&*chrome::CARD)
+                .children([
+                    html!("h3", {
+                        .class(&*typography::MINI_HEADING)
+                        .text("Product details")
+                    }),
+                    detail_row("GTIN", &product.gtin),
+                    detail_row("Category", product.category_id.as_str()),
+                    detail_row("Brand", product.brand_id.as_str()),
+                    detail_row("Inventory", &format!("{} units", product.inventory)),
+                    detail_row("Currency", &product.currency),
+                ])
+                .apply_if(product.is_preorder, |dom| {
+                    dom.child(detail_row("Delivery", &match product.estimated_delivery_weeks {
+                        Some(w) => format!("Pre-order ({w} weeks)"),
+                        None => "Pre-order".to_string(),
+                    }))
+                })
+            }))
+        }))
+        // Right: payment panel
+        .child(html!("div", {
+            .style("position", "sticky")
+            .style("top", "1.5rem")
+            // Product name + price
+            .child(html!("div", {
+                .child(html!("h1", {
+                    .class(&*typography::SECTION_TITLE)
+                    .text(&product.name)
+                }))
+                .child(html!("div", {
+                    .style("display", "flex")
+                    .style("align-items", "baseline")
+                    .style("gap", "0.75rem")
+                    .style("margin-top", "0.5rem")
+                    .children([
+                        html!("span", {
+                            .style("font-size", "2rem")
+                            .style("font-weight", "700")
+                            .style("color", "#111827")
+                            .text(&price)
+                        }),
+                        html!("span", {
+                            .class(&*typography::BODY_MUTED)
+                            .text(&format!("per unit \u{00b7} MOQ: {}", product.minimum_order_quantity))
+                        }),
+                    ])
+                }))
+            }))
+            // Payment card
+            .child(html!("div", {
+                .class(&*chrome::CARD)
+                .style("margin-top", "1.5rem")
+                .children([
+                    html!("h3", {
+                        .class(&*typography::MINI_HEADING)
+                        .style("margin-bottom", "1rem")
+                        .text("Join this group order")
+                    }),
+                    // Order summary
+                    html!("div", {
+                        .style("display", "flex")
+                        .style("flex-direction", "column")
+                        .style("gap", "0.75rem")
+                        .children([
+                            summary_row("Unit price", &price),
+                            summary_row("Min. order quantity", &format!("{}", product.minimum_order_quantity)),
+                            summary_row("Your commitment", &format!("{} units", product.minimum_order_quantity)),
+                        ])
+                    }),
+                    // Total
+                    html!("div", {
+                        .style("display", "flex")
+                        .style("justify-content", "space-between")
+                        .style("margin-top", "1rem")
+                        .style("padding-top", "1rem")
+                        .style("border-top", &format!("1px solid {}", groupshop_frontend_shared::theme::color::LINE))
+                        .children([
+                            html!("span", {
+                                .style("font-weight", "700")
+                                .text("Total")
+                            }),
+                            html!("span", {
+                                .style("font-weight", "700")
+                                .style("font-size", "1.15rem")
+                                .text(&format!("${:.2}", product.price_cents as f64 / 100.0 * product.minimum_order_quantity as f64))
+                            }),
+                        ])
+                    }),
+                    // Wallet connect button
+                    html!("button", {
+                        .class(&*chrome::BUTTON)
+                        .class(&*chrome::BUTTON_GRADIENT)
+                        .style("width", "100%")
+                        .style("margin-top", "1.5rem")
+                        .style("min-height", "3rem")
+                        .style("font-size", "1rem")
+                        .text("Connect wallet & pay")
+                        .event(|_: events::Click| {
+                            let _ = web_sys::window()
+                                .unwrap()
+                                .alert_with_message("Wallet connection coming soon!");
+                        })
+                    }),
+                    // Info note
+                    html!("p", {
+                        .class(&*typography::BODY_MUTED)
+                        .style("margin-top", "0.75rem")
+                        .style("font-size", "0.8rem")
+                        .style("text-align", "center")
+                        .text("Payment is held in escrow on Solana until the group order threshold is met.")
+                    }),
+                ])
+            }))
+            // Back link
+            .child(html!("a", {
+                .attr("href", "/")
+                .style("display", "inline-flex")
+                .style("align-items", "center")
+                .style("gap", "0.35rem")
+                .style("margin-top", "1rem")
+                .style("font-size", "0.85rem")
+                .style("color", groupshop_frontend_shared::theme::color::BLUE)
+                .text("\u{2190} Back to all products")
+            }))
+        }))
+    })
+}
+
+fn detail_row(label: &str, value: &str) -> Dom {
+    html!("div", {
+        .style("display", "flex")
+        .style("justify-content", "space-between")
+        .style("padding", "0.4rem 0")
+        .style("border-bottom", &format!("1px solid {}", groupshop_frontend_shared::theme::color::BORDER_SOFT))
         .children([
-            html!("div", {
+            html!("span", {
                 .class(&*typography::MICRO_LABEL)
-                .text(number)
+                .text(label)
             }),
-            html!("div", {
-                .class(&*typography::MINI_HEADING)
-                .text(title)
-            }),
-            html!("p", {
-                .class(&*typography::BODY_MUTED)
-                .text(body)
+            html!("span", {
+                .style("font-size", "0.85rem")
+                .text(value)
             }),
         ])
     })
 }
 
-fn info_item(title: &'static str, body: &'static str) -> Dom {
+fn summary_row(label: &str, value: &str) -> Dom {
     html!("div", {
-        .class(&*chrome::INFO_ITEM)
+        .style("display", "flex")
+        .style("justify-content", "space-between")
         .children([
-            html!("div", {
-                .class(&*typography::MINI_HEADING)
-                .text(title)
-            }),
-            html!("p", {
+            html!("span", {
                 .class(&*typography::BODY_MUTED)
-                .text(body)
+                .text(label)
             }),
-        ])
-    })
-}
-
-fn deal_card(
-    badge: &'static str,
-    visual_class: &str,
-    visual_word: &'static str,
-    callout: &'static str,
-    title: &'static str,
-    price_now: &'static str,
-    price_then: &'static str,
-    progress: &'static str,
-    progress_width: &'static str,
-    meta: &'static str,
-) -> Dom {
-    html!("article", {
-        .class(&*chrome::DEAL_CARD)
-        .child(html!("div", {
-            .class(&*chrome::DEAL_VISUAL)
-            .class(visual_class)
-            .child(html!("div", {
-                .class(&*chrome::DEAL_BADGE)
-                .text(badge)
-            }))
-            .child(html!("div", {
-                .class(&*chrome::DEAL_CALLOUT)
-                .child(html!("div", {
-                    .class(&*typography::VISUAL_CALLOUT)
-                    .text(callout)
-                }))
-            }))
-            .child(html!("div", {
-                .class(&*typography::VISUAL_WORD)
-                .text(visual_word)
-            }))
-        }))
-        .child(html!("div", {
-            .class(&*chrome::DEAL_BODY)
-            .child(html!("div", {
-                .class(&*typography::CARD_TITLE)
-                .text(title)
-            }))
-            .child(html!("div", {
-                .class(&*chrome::PRICE_ROW)
-                .children([
-                    html!("div", {
-                        .class(&*typography::PRICE_NOW)
-                        .text(price_now)
-                    }),
-                    html!("div", {
-                        .class(&*typography::PRICE_THEN)
-                        .text(price_then)
-                    }),
-                ])
-            }))
-            .child(html!("div", {
-                .class(&*chrome::PROGRESS_HEAD)
-                .children([
-                    html!("span", {
-                        .class(&*typography::MICRO_LABEL)
-                        .text("Group Progress")
-                    }),
-                    html!("span", {
-                        .class(&*typography::MICRO_LABEL)
-                        .text(progress)
-                    }),
-                ])
-            }))
-            .child(html!("div", {
-                .class(&*chrome::PROGRESS_BAR)
-                .child(html!("div", {
-                    .class(&*chrome::PROGRESS_FILL)
-                    .style("width", progress_width)
-                }))
-            }))
-            .child(html!("button", {
-                .class(&*chrome::BUTTON)
-                .class(&*chrome::BUTTON_DARK)
-                .attr("type", "button")
-                .text("Preview Deal")
-            }))
-            .child(html!("div", {
-                .class(&*chrome::DEAL_META)
-                .text(meta)
-            }))
-        }))
-    })
-}
-
-fn feed_item(who: &'static str, what: &'static str, when: &'static str) -> Dom {
-    html!("div", {
-        .class(&*chrome::FEED_ITEM)
-        .children([
-            html!("strong", {
-                .class(&*typography::FEED_NAME)
-                .text(who)
-            }),
-            html!("p", {
-                .class(&*typography::FEED_TEXT)
-                .text(what)
-            }),
-            html!("p", {
-                .class(&*typography::FEED_TEXT)
-                .text(when)
+            html!("span", {
+                .style("font-weight", "500")
+                .text(value)
             }),
         ])
     })
@@ -1092,89 +1175,6 @@ fn render_profile() -> Dom {
     )
 }
 
-fn render_admin_users() -> Dom {
-    let users = Mutable::new(None::<Vec<AdminUserSummary>>);
-    let error = Mutable::new(None::<String>);
-
-    html!("div", {
-        .future(clone!(users, error => async move {
-            match ApiCtx::get().client.admin_list_users(&AdminListUsersRequest { page: 1, per_page: 50 }).await {
-                Ok(resp) => users.set(Some(resp.users)),
-                Err(err) => error.set(Some(err.to_string())),
-            }
-        }))
-        .child(auth_shell(
-            "Admin: Users",
-            vec![
-                plain_text("Inspect users and manage administrator access."),
-                message_block(error.clone(), "error"),
-                html!("div", {
-                    .child_signal(users.signal_cloned().map(clone!(error => move |users| {
-                        Some(match users {
-                            Some(users) => html!("div", {
-                                .style("display", "grid")
-                                .style("gap", "0.75rem")
-                                .children(users.into_iter().map(|user| render_admin_user_row(user, error.clone())).collect::<Vec<_>>())
-                            }),
-                            None => html!("p", {
-                                .text("Loading users…")
-                            }),
-                        })
-                    })))
-                }),
-            ],
-        ))
-    })
-}
-
-fn render_admin_user_row(user: AdminUserSummary, error: Mutable<Option<String>>) -> Dom {
-    let is_admin = Mutable::new(user.roles.contains(&UserRole::Admin));
-    let user_id_for_update = user.id.clone();
-    let user_id_for_delete = user.id.clone();
-    html!("div", {
-        .class(&*chrome::CARD)
-        .children([
-            plain_text(&format!(
-                "{} ({})",
-                user.username,
-                user.email.unwrap_or_else(|| "no email".to_string())
-            )),
-            plain_text(&format!("Roles: {:?}", user.roles)),
-            checkbox_row("Admin", is_admin.clone()),
-            action_button("Save roles", clone!(is_admin, error => move || {
-                let mut roles = user.roles.clone();
-                let user_id_for_update = user_id_for_update.clone();
-                if is_admin.get() && !roles.contains(&UserRole::Admin) {
-                    roles.push(UserRole::Admin);
-                }
-                if !is_admin.get() {
-                    roles.retain(|role| *role != UserRole::Admin);
-                }
-                spawn_local(clone!(error => async move {
-                    match ApiCtx::get().client.admin_update_user(&AdminUpdateUserRequest {
-                        id: user_id_for_update.clone(),
-                        roles,
-                    }).await {
-                        Ok(_) => Route::AdminUsers.go_to_url(),
-                        Err(err) => error.set(Some(err.to_string())),
-                    }
-                }));
-            })),
-            action_button("Delete user", clone!(error => move || {
-                let user_id_for_delete = user_id_for_delete.clone();
-                spawn_local(clone!(error => async move {
-                    match ApiCtx::get().client.admin_delete_user(&AdminDeleteUserRequest {
-                        id: user_id_for_delete.clone(),
-                    }).await {
-                        Ok(_) => Route::AdminUsers.go_to_url(),
-                        Err(err) => error.set(Some(err.to_string())),
-                    }
-                }));
-            })),
-        ])
-    })
-}
-
 fn render_error(err: Arc<ApiError>) -> Dom {
     auth_shell(
         "Error",
@@ -1216,8 +1216,7 @@ fn site_header() -> Dom {
         .child(html!("nav", {
             .class(&*chrome::NAV)
             .children([
-                section_nav_link("/#deals", "Explore Deals"),
-                section_nav_link("/#escrow", "Escrow Flow"),
+                section_nav_link("/#products", "Products"),
                 section_nav_link("/#how-it-works", "How It Works"),
             ])
         }))
@@ -1319,7 +1318,7 @@ fn account_menu(profile: AccountProfile) -> Dom {
         .child({
             let mut items = vec![menu_link_item(Route::Profile, "Account")];
             if profile.roles.contains(&UserRole::Admin) {
-                items.push(menu_link_item(Route::AdminUsers, "Admin"));
+                items.push(menu_external_link_item(config::admin_url(), "Admin"));
             }
             items.push(menu_action_item("Sign out", || {
                 ApiCtx::sign_out();
@@ -1366,6 +1365,21 @@ fn menu_link_item(route: Route, label: &'static str) -> Dom {
         .class(&*chrome::BUTTON)
         .class(&*chrome::BUTTON_SOFT)
         .attr("href", &route.link())
+        .style("width", "100%")
+        .style("min-height", "2.6rem")
+        .style("padding", "0.72rem 1rem")
+        .style("border-radius", "0.72rem")
+        .style("font-size", "1rem")
+        .text(label)
+    })
+}
+
+fn menu_external_link_item(href: &str, label: &'static str) -> Dom {
+    let href = href.to_string();
+    html!("a", {
+        .class(&*chrome::BUTTON)
+        .class(&*chrome::BUTTON_SOFT)
+        .attr("href", &href)
         .style("width", "100%")
         .style("min-height", "2.6rem")
         .style("padding", "0.72rem 1rem")

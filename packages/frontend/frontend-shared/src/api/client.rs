@@ -296,4 +296,119 @@ impl ApiClient {
     pub async fn admin_delete_user(&self, req: &AdminDeleteUserRequest) -> FrontendResult<()> {
         self.api_request::<AdminDeleteUserRoute>(req).await
     }
+
+    // --- Public product browsing ---
+
+    pub async fn product_list(
+        &self,
+        req: &ProductListRequest,
+    ) -> FrontendResult<ProductListResponse> {
+        self.api_request_response::<ProductListRoute>(req).await
+    }
+
+    pub async fn product_detail(
+        &self,
+        req: &ProductDetailRequest,
+    ) -> FrontendResult<ProductDetailResponse> {
+        self.api_request_response::<ProductDetailRoute>(req).await
+    }
+
+    pub async fn product_categories(&self) -> FrontendResult<ProductCategoriesResponse> {
+        self.api_response::<ProductCategoriesRoute>().await
+    }
+
+    pub async fn product_brands(&self) -> FrontendResult<ProductBrandsResponse> {
+        self.api_response::<ProductBrandsRoute>().await
+    }
+
+    // --- Admin product CRUD ---
+
+    pub async fn admin_list_products(
+        &self,
+        req: &AdminListProductsRequest,
+    ) -> FrontendResult<AdminListProductsResponse> {
+        self.api_request_response::<AdminListProductsRoute>(req)
+            .await
+    }
+
+    pub async fn admin_create_product(
+        &self,
+        req: &AdminCreateProductRequest,
+    ) -> FrontendResult<AdminCreateProductResponse> {
+        self.api_request_response::<AdminCreateProductRoute>(req)
+            .await
+    }
+
+    pub async fn admin_update_product(
+        &self,
+        req: &AdminUpdateProductRequest,
+    ) -> FrontendResult<AdminUpdateProductResponse> {
+        self.api_request_response::<AdminUpdateProductRoute>(req)
+            .await
+    }
+
+    pub async fn admin_delete_product(
+        &self,
+        req: &AdminDeleteProductRequest,
+    ) -> FrontendResult<()> {
+        self.api_request::<AdminDeleteProductRoute>(req).await
+    }
+
+    // --- Admin category CRUD ---
+
+    pub async fn admin_list_categories(&self) -> FrontendResult<AdminListCategoriesResponse> {
+        self.api_response::<AdminListCategoriesRoute>().await
+    }
+
+    pub async fn admin_create_category(
+        &self,
+        req: &AdminCreateCategoryRequest,
+    ) -> FrontendResult<AdminCreateCategoryResponse> {
+        self.api_request_response::<AdminCreateCategoryRoute>(req)
+            .await
+    }
+
+    pub async fn admin_update_category(
+        &self,
+        req: &AdminUpdateCategoryRequest,
+    ) -> FrontendResult<AdminUpdateCategoryResponse> {
+        self.api_request_response::<AdminUpdateCategoryRoute>(req)
+            .await
+    }
+
+    pub async fn admin_delete_category(
+        &self,
+        req: &AdminDeleteCategoryRequest,
+    ) -> FrontendResult<()> {
+        self.api_request::<AdminDeleteCategoryRoute>(req).await
+    }
+
+    // --- Admin brand CRUD ---
+
+    pub async fn admin_list_brands(
+        &self,
+        req: &AdminListBrandsRequest,
+    ) -> FrontendResult<AdminListBrandsResponse> {
+        self.api_request_response::<AdminListBrandsRoute>(req).await
+    }
+
+    pub async fn admin_create_brand(
+        &self,
+        req: &AdminCreateBrandRequest,
+    ) -> FrontendResult<AdminCreateBrandResponse> {
+        self.api_request_response::<AdminCreateBrandRoute>(req)
+            .await
+    }
+
+    pub async fn admin_update_brand(
+        &self,
+        req: &AdminUpdateBrandRequest,
+    ) -> FrontendResult<AdminUpdateBrandResponse> {
+        self.api_request_response::<AdminUpdateBrandRoute>(req)
+            .await
+    }
+
+    pub async fn admin_delete_brand(&self, req: &AdminDeleteBrandRequest) -> FrontendResult<()> {
+        self.api_request::<AdminDeleteBrandRoute>(req).await
+    }
 }

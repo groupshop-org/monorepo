@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use groupshop_backend_shared::{
-    prelude::{ApiError, AuthError, AuthToken, UserRole},
+    prelude::{ApiError, AuthError, AuthToken, ProductId, UserRole},
     GroupshopCodec,
 };
 use groupshop_frontend_shared::window;
@@ -9,6 +9,7 @@ use groupshop_frontend_shared::window;
 #[derive(Debug, Clone)]
 pub enum Route {
     Home,
+    Product { id: ProductId },
     PrivacyPolicy,
     TermsOfService,
     Signin,
@@ -19,7 +20,6 @@ pub enum Route {
     ChooseUsername,
     OpenIdFinalize { token: AuthToken },
     Profile,
-    AdminUsers,
     Error(Arc<ApiError>),
     NotFound,
 }
@@ -45,6 +45,10 @@ impl Route {
 
         match parts.as_slice() {
             [] => Self::Home,
+            ["product", slug] => match ProductId::new(*slug) {
+                Ok(id) => Self::Product { id },
+                Err(_) => Self::NotFound,
+            },
             ["privacy-policy"] => Self::PrivacyPolicy,
             ["terms-of-service"] => Self::TermsOfService,
             ["signin"] => Self::Signin,
@@ -70,7 +74,6 @@ impl Route {
                 ))))),
             },
             ["profile"] => Self::Profile,
-            ["admin", "users"] => Self::AdminUsers,
             ["error", error] => match ApiError::decode_str(error) {
                 Ok(error) => Self::Error(Arc::new(error)),
                 Err(err) => Self::Error(Arc::new(ApiError::Unknown(err.to_string()))),
@@ -82,6 +85,7 @@ impl Route {
     pub fn link(&self) -> String {
         match self {
             Self::Home => "/".to_string(),
+            Self::Product { id } => format!("/product/{}", id.as_str()),
             Self::PrivacyPolicy => "/privacy-policy".to_string(),
             Self::TermsOfService => "/terms-of-service".to_string(),
             Self::Signin => "/signin".to_string(),
@@ -98,7 +102,6 @@ impl Route {
                 format!("/openid-finalize/{}", token.encode_str().unwrap())
             }
             Self::Profile => "/profile".to_string(),
-            Self::AdminUsers => "/admin/users".to_string(),
             Self::Error(err) => format!(
                 "/error/{}",
                 err.encode_str().unwrap_or_else(|_| "unknown".to_string())
@@ -126,9 +129,13 @@ impl Route {
 
         match profile {
             None => match self {
-                Home | PrivacyPolicy | TermsOfService | Signin | Register | NotFound => {
-                    Resolved::Render(self)
-                }
+                Home
+                | Product { .. }
+                | PrivacyPolicy
+                | TermsOfService
+                | Signin
+                | Register
+                | NotFound => Resolved::Render(self),
                 _ => Resolved::Redirect(Home),
             },
             Some(profile) => {
@@ -151,9 +158,6 @@ impl Route {
 
                 match self {
                     Signin | Register | VerifyEmail | ChooseUsername => Resolved::Redirect(Home),
-                    AdminUsers if !profile.roles.contains(&UserRole::Admin) => {
-                        Resolved::Redirect(Home)
-                    }
                     _ => Resolved::Render(self),
                 }
             }

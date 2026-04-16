@@ -1,6 +1,7 @@
 mod account;
 mod admin;
 mod auth;
+mod product;
 
 use http::Method;
 use serde::{de::DeserializeOwned, Serialize};
@@ -8,6 +9,7 @@ use serde::{de::DeserializeOwned, Serialize};
 pub use account::*;
 pub use admin::*;
 pub use auth::*;
+pub use product::*;
 
 use crate::error::ApiError;
 
@@ -22,6 +24,7 @@ pub enum ApiRoute {
     Auth(ApiAuthRoute),
     Admin(ApiAdminRoute),
     Account(ApiAccountRoute),
+    Product(ApiProductRoute),
 }
 
 impl ApiRoute {
@@ -30,6 +33,7 @@ impl ApiRoute {
             Self::Auth(route) => route.auth_requirement(),
             Self::Admin(_) => Some(AuthRequirement::Session),
             Self::Account(route) => route.auth_requirement(),
+            Self::Product(route) => route.auth_requirement(),
         }
     }
 
@@ -38,6 +42,7 @@ impl ApiRoute {
             Self::Auth(route) => route.role_requirement(),
             Self::Admin(_) => Some(UserRole::admin().to_vec()),
             Self::Account(route) => route.role_requirement(),
+            Self::Product(route) => route.role_requirement(),
         }
     }
 }
@@ -48,6 +53,7 @@ impl std::fmt::Display for ApiRoute {
             Self::Auth(route) => format!("auth/{route}"),
             Self::Admin(route) => format!("admin/{route}"),
             Self::Account(route) => format!("account/{route}"),
+            Self::Product(route) => format!("product/{route}"),
         };
 
         write!(f, "{value}")
@@ -68,6 +74,7 @@ impl TryFrom<&http::Uri> for ApiRoute {
             "auth" => Ok(Self::Auth(uri.try_into()?)),
             "admin" => Ok(Self::Admin(uri.try_into()?)),
             "account" => Ok(Self::Account(uri.try_into()?)),
+            "product" => Ok(Self::Product(uri.try_into()?)),
             _ => Err(ApiError::UnknownRoute(uri.path().to_string())),
         }
     }

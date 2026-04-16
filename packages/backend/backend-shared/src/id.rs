@@ -1,6 +1,9 @@
+use base64::Engine;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::str::FromStr;
 
+// This macro generates a newtype struct that wraps a 32-byte array, along with common trait implementations for convenience.
+// String representation uses URL-safe base64 (no padding).
 macro_rules! new_hash_id_type {
     ($type_name:ident) => {
         #[derive(Clone, PartialOrd, Ord, PartialEq, Eq, Hash)]
@@ -9,6 +12,20 @@ macro_rules! new_hash_id_type {
         impl $type_name {
             pub fn inner(&self) -> [u8; 32] {
                 self.0
+            }
+
+            pub fn encode_str(&self) -> String {
+                base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(self.0)
+            }
+
+            pub fn from_encoded_str(s: &str) -> Result<Self, String> {
+                let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+                    .decode(s)
+                    .map_err(|e| format!("base64 decode error: {e}"))?;
+                let arr: [u8; 32] = bytes
+                    .try_into()
+                    .map_err(|v: Vec<u8>| format!("expected 32 bytes, got {}", v.len()))?;
+                Ok($type_name(arr))
             }
         }
 
@@ -26,7 +43,7 @@ macro_rules! new_hash_id_type {
 
         impl std::fmt::Display for $type_name {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                write!(f, "{}", const_hex::encode(self.0.as_slice()))
+                write!(f, "{}", self.encode_str())
             }
         }
 
@@ -37,12 +54,10 @@ macro_rules! new_hash_id_type {
         }
 
         impl FromStr for $type_name {
-            type Err = const_hex::FromHexError;
+            type Err = String;
 
             fn from_str(s: &str) -> Result<Self, Self::Err> {
-                let mut bytes = [0u8; 32];
-                const_hex::decode_to_slice(s, &mut bytes)?;
-                Ok(Self(bytes))
+                Self::from_encoded_str(s)
             }
         }
 
@@ -51,7 +66,7 @@ macro_rules! new_hash_id_type {
             where
                 S: serde::Serializer,
             {
-                serializer.serialize_str(&self.to_string())
+                serializer.serialize_str(&self.encode_str())
             }
         }
 
@@ -66,14 +81,14 @@ macro_rules! new_hash_id_type {
                     type Value = $type_name;
 
                     fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-                        formatter.write_str("expected hex-encoded string")
+                        formatter.write_str("expected base64url-encoded string")
                     }
 
                     fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
                     where
                         E: serde::de::Error,
                     {
-                        $type_name::from_str(value).map_err(serde::de::Error::custom)
+                        $type_name::from_encoded_str(value).map_err(serde::de::Error::custom)
                     }
                 }
 
@@ -188,3 +203,6 @@ new_hash_id_type!(AuthTokenValue);
 new_hash_id_type!(AuthTokenValueHash);
 new_hash_id_type!(AuthTokenSignature);
 new_slug_id_type!(AccountUsername);
+new_slug_id_type!(ProductId);
+new_slug_id_type!(ProductCategoryId);
+new_slug_id_type!(ProductBrandId);

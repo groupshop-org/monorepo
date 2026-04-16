@@ -1,0 +1,55 @@
+version: "3"
+
+includes:
+  config:
+    taskfile: ../config.yml
+    flatten: true
+
+vars:
+  PATH_SUPPLIER_DATA_QOGITA: '{{joinPath .PATH_SUPPLIER_DATA "qogita_catalog.csv"}}'
+
+tasks:
+  qogita-token:
+    desc: "Get a token from qogita for api authentication"
+    cmds:
+      - >
+        curl
+        --request POST
+        --url https://api.qogita.com/auth/login/
+        --header 'accept: application/json'
+        --header 'content-type: application/json'
+        --data '{"email":"{{.QOGITA_EMAIL}}","password":"{{.QOGITA_PASSWORD}}"}'
+        | jq -r '.accessToken'
+
+  qogita-categories:
+    desc: "Get categories from qogita"
+    cmds:
+      - >
+        curl
+        --request GET
+        --url https://api.qogita.com/categories/
+        --header 'accept: application/json'
+        --header 'authorization: Bearer {{.QOGITA_TOKEN}}'
+
+  qogita-products:
+    desc: "Get products from qogita"
+    cmds:
+      - >
+        curl
+        --request GET
+        --url 'https://api.qogita.com/variants/search/download/?is_including_extended_delivery_time=true'
+        --header 'accept: application/json'
+        --header 'authorization: Bearer {{.QOGITA_TOKEN}}'
+
+  qogita-import:
+    desc: "Imports data from qogita export into the database via admin API"
+    env:
+      GROUPSHOP_CLI_API_AUTH_EMAIL: "{{.GROUPSHOP_CLI_API_AUTH_EMAIL}}"
+      GROUPSHOP_CLI_API_AUTH_PASSWORD: "{{.GROUPSHOP_CLI_API_AUTH_PASSWORD}}"
+    cmds:
+      - >
+        cargo run -p groupshop-cli --
+        import
+        --csv "{{.PATH_SUPPLIER_DATA_QOGITA}}"
+        --api-url "{{.URL_API_DEV}}"
+        --max-per-category 10

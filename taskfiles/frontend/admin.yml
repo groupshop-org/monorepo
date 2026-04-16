@@ -1,0 +1,45 @@
+version: "3"
+
+includes:
+  config:
+    taskfile: ../config.yml
+    flatten: true
+
+vars:
+  PATH_TRUNK_DIST_ADMIN: '{{joinPath .PATH_TRUNK_DIST "admin"}}'
+
+tasks:
+  build:
+    desc: "Build the admin app for production"
+    dir: "{{.PATH_PACKAGE_ADMIN}}"
+    env:
+      URL_API: "${URL_API_PROD}"
+      URL_LANDING: "{{.URL_LANDING_PROD}}"
+    cmds:
+      - >
+        NO_COLOR=true trunk build
+        --release
+        --dist "{{.PATH_TRUNK_DIST_ADMIN}}"
+
+  dev:
+    desc: "Run the admin app in development mode"
+    dir: "{{.PATH_PACKAGE_ADMIN}}"
+    env:
+      URL_API: "{{.URL_API_DEV}}"
+      URL_LANDING: "{{.URL_LANDING_DEV}}"
+    cmds:
+      - >
+        NO_COLOR=true trunk serve
+        --port {{.PORT_ADMIN_DEV}}
+        --dist "{{.PATH_TRUNK_DIST_ADMIN}}"
+        --watch "{{.PATH_PACKAGE_FRONTEND_SHARED}}"
+        --watch "{{.PATH_ROOT_CARGO_TOML}}"
+        --watch "."
+
+  deploy:
+    desc: "Deploy the admin app to Cloudflare Pages"
+    deps: ["build"]
+    env:
+      CLOUDFLARE_API_TOKEN: "{{.CLOUDFLARE_DEPLOY_API_TOKEN}}"
+    cmds:
+      - wrangler pages deploy "{{.PATH_TRUNK_DIST_ADMIN}}" --project-name=groupshop-admin

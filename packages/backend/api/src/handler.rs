@@ -1,6 +1,7 @@
 mod account;
 mod admin;
 mod auth;
+mod product;
 
 use http::{Method, StatusCode};
 use serde_json::json;
@@ -166,6 +167,63 @@ async fn handle_route(
                 admin::user::handle_delete_user(ctx, req).await?;
                 Ok(ApiHandlerResponse::raw(empty_response(None)))
             }
+            ApiAdminRoute::ListProducts => Ok(admin::product::handle_admin_list_products(ctx, req)
+                .await?
+                .boxed()),
+            ApiAdminRoute::CreateProduct => {
+                Ok(admin::product::handle_admin_create_product(ctx, req)
+                    .await?
+                    .boxed())
+            }
+            ApiAdminRoute::UpdateProduct => {
+                Ok(admin::product::handle_admin_update_product(ctx, req)
+                    .await?
+                    .boxed())
+            }
+            ApiAdminRoute::DeleteProduct => {
+                admin::product::handle_admin_delete_product(ctx, req).await?;
+                Ok(ApiHandlerResponse::raw(empty_response(None)))
+            }
+            ApiAdminRoute::ListCategories => {
+                Ok(admin::category::handle_admin_list_categories(ctx, req)
+                    .await?
+                    .boxed())
+            }
+            ApiAdminRoute::CreateCategory => {
+                Ok(admin::category::handle_admin_create_category(ctx, req)
+                    .await?
+                    .boxed())
+            }
+            ApiAdminRoute::UpdateCategory => {
+                Ok(admin::category::handle_admin_update_category(ctx, req)
+                    .await?
+                    .boxed())
+            }
+            ApiAdminRoute::DeleteCategory => {
+                admin::category::handle_admin_delete_category(ctx, req).await?;
+                Ok(ApiHandlerResponse::raw(empty_response(None)))
+            }
+            ApiAdminRoute::ListBrands => Ok(admin::brand::handle_admin_list_brands(ctx, req)
+                .await?
+                .boxed()),
+            ApiAdminRoute::CreateBrand => Ok(admin::brand::handle_admin_create_brand(ctx, req)
+                .await?
+                .boxed()),
+            ApiAdminRoute::UpdateBrand => Ok(admin::brand::handle_admin_update_brand(ctx, req)
+                .await?
+                .boxed()),
+            ApiAdminRoute::DeleteBrand => {
+                admin::brand::handle_admin_delete_brand(ctx, req).await?;
+                Ok(ApiHandlerResponse::raw(empty_response(None)))
+            }
+        },
+        ApiRoute::Product(product_route) => match product_route {
+            ApiProductRoute::List => Ok(product::handle_product_list(ctx, req).await?.boxed()),
+            ApiProductRoute::Detail => Ok(product::handle_product_detail(ctx, req).await?.boxed()),
+            ApiProductRoute::Categories => {
+                Ok(product::handle_product_categories(ctx, req).await?.boxed())
+            }
+            ApiProductRoute::Brands => Ok(product::handle_product_brands(ctx, req).await?.boxed()),
         },
         ApiRoute::Account(account_route) => match account_route {
             ApiAccountRoute::Profile => {
