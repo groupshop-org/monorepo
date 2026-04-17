@@ -43,3 +43,4 @@ target/
 
 # Trunk
 .trunk/
+.tmp/

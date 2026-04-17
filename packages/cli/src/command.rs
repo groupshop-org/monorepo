@@ -2,6 +2,7 @@ use clap::Subcommand;
 
 pub mod import;
 pub mod invoke;
+pub mod market;
 
 #[derive(Subcommand, Clone, Debug)]
 pub enum Command {
@@ -32,5 +33,11 @@ pub enum Command {
         /// Dry run — parse and report without creating anything
         #[arg(long, default_value = "false")]
         dry_run: bool,
+    },
+
+    /// Interact with the Groupshop market program (group-buying escrow).
+    Market {
+        #[command(subcommand)]
+        sub: market::MarketCmd,
     },
 }

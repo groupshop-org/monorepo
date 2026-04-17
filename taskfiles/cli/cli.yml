@@ -27,3 +27,11 @@ tasks:
         task cli:exec --
         --rpc-url {{.URL_SOLANA_VALIDATOR_RPC_DEV}}
         invoke {{.CLI_ARGS}}
+
+  market:
+    desc: "Run a market subcommand (pdas, initialize-pool, deposit, lock-pool, release, enter-refund-mode, claim-refund)"
+    cmds:
+      - >
+        task cli:exec --
+        --rpc-url {{.URL_SOLANA_VALIDATOR_RPC_DEV}}
+        market {{.CLI_ARGS}}

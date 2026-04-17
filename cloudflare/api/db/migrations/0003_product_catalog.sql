@@ -108,6 +108,7 @@ END;
 -- ---------------------------------------------------------------------------
 CREATE TABLE product_catalog (
     id TEXT PRIMARY KEY,
+    product_hash BLOB NOT NULL,
     gtin TEXT NOT NULL,
     name TEXT NOT NULL,
     category_id TEXT NOT NULL,
@@ -128,6 +129,7 @@ CREATE TABLE product_catalog (
 ) WITHOUT ROWID;
 
 CREATE UNIQUE INDEX idx_product_catalog_gtin ON product_catalog(gtin);
+CREATE UNIQUE INDEX idx_product_catalog_product_hash ON product_catalog(product_hash);
 CREATE INDEX idx_product_catalog_category_id ON product_catalog(category_id);
 CREATE INDEX idx_product_catalog_brand_id ON product_catalog(brand_id);
 
@@ -171,6 +173,10 @@ BEGIN
     SELECT CASE
         WHEN NEW.currency NOT IN ('USD', 'EUR', 'GBP') THEN
             RAISE(ABORT, 'currency must be USD, EUR, or GBP')
+    END;
+    SELECT CASE
+        WHEN NEW.product_hash IS NULL OR length(NEW.product_hash) != 32 THEN
+            RAISE(ABORT, 'product_hash must be 32 bytes')
     END;
 END;
 

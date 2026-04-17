@@ -173,13 +173,16 @@ impl ProductCatalogDb {
         supplier_url: &str,
         image_url: &str,
     ) -> ApiResult<()> {
+        let product_hash = id.hash();
+        let hash_js = js_sys::Uint8Array::from(product_hash.as_ref()).into();
         db_execute(db_prepare(
             &get_d1(&ctx.env)?,
             format!(
-                "INSERT INTO {SQL_TABLE_PRODUCT_CATALOG} (id, gtin, name, category_id, brand_id, price_cents, currency, minimum_order_quantity, inventory, is_preorder, estimated_delivery_weeks, supplier_url, image_url) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)"
+                "INSERT INTO {SQL_TABLE_PRODUCT_CATALOG} (id, product_hash, gtin, name, category_id, brand_id, price_cents, currency, minimum_order_quantity, inventory, is_preorder, estimated_delivery_weeks, supplier_url, image_url) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)"
             ),
             &[
                 JsValue::from_str(id.as_str()),
+                hash_js,
                 JsValue::from_str(gtin),
                 JsValue::from_str(name),
                 JsValue::from_str(category_id.as_str()),
