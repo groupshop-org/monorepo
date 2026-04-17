@@ -1,0 +1,179 @@
+version: "3"
+
+includes:
+  config:
+    taskfile: ../config.yml
+    flatten: true
+
+vars:
+  PATH_SOLANA_TESTS_TMP: '{{joinPath .PATH_REPO_ROOT ".tmp" "solana-tests"}}'
+  PATH_PACKAGES_CLI: '{{joinPath .PATH_REPO_ROOT "packages" "cli"}}'
+  PATH_SOLANA_BIN: "{{.HOME}}/.local/share/solana/install/active_release/bin"
+  PATH_DEFAULT_KEYPAIR: "{{.HOME}}/.config/solana/id.json"
+
+tasks:
+  integration-test:
+    desc: "End-to-end happy-path test against the local validator. Requires `task dev` to be running."
+    cmds:
+      - |
+        set -euo pipefail
+        export PATH="{{.PATH_SOLANA_BIN}}:$PATH"
+
+        RPC_URL="{{.URL_SOLANA_VALIDATOR_RPC_DEV}}"
+        KEYPAIR="{{.PATH_DEFAULT_KEYPAIR}}"
+        TMP_DIR="{{.PATH_SOLANA_TESTS_TMP}}"
+        mkdir -p "$TMP_DIR"
+
+        # --- preflight ----------------------------------------------------
+        if ! curl -s -X POST -H 'Content-Type: application/json' \
+            -d '{"jsonrpc":"2.0","id":1,"method":"getHealth"}' "$RPC_URL" \
+            | grep -q '"result":"ok"'; then
+          echo "✗ validator not reachable at $RPC_URL — run \`task dev\` first" >&2
+          exit 1
+        fi
+
+        if [ ! -f "$KEYPAIR" ]; then
+          echo "✗ default keypair not found at $KEYPAIR" >&2
+          exit 1
+        fi
+
+        # --- build + deploy fresh program artifact -----------------------
+        echo "▸ building + deploying market program"
+        task solana-programs:build-dev >/dev/null
+        task solana-programs:deploy-local >/dev/null
+        PROGRAM=$(task solana-programs:id-market-local)
+        echo "  program = $PROGRAM"
+
+        # Airdrop authority (default keypair) — no-op if already rich
+        solana --url "$RPC_URL" --keypair "$KEYPAIR" airdrop 10 >/dev/null 2>&1 || true
+
+        # --- reusable test USDC mint -------------------------------------
+        MINT_KEYPAIR="$TMP_DIR/mint.json"
+        if [ ! -f "$MINT_KEYPAIR" ]; then
+          solana-keygen new --no-bip39-passphrase --silent --outfile "$MINT_KEYPAIR" >/dev/null
+        fi
+        MINT=$(solana-keygen pubkey "$MINT_KEYPAIR")
+        if ! spl-token --url "$RPC_URL" display "$MINT" >/dev/null 2>&1; then
+          spl-token --url "$RPC_URL" --fee-payer "$KEYPAIR" \
+            create-token --decimals 6 --mint-authority "$KEYPAIR" -- "$MINT_KEYPAIR" >/dev/null
+        fi
+        echo "  mint    = $MINT"
+
+        # --- fresh per-run buyer + destination ---------------------------
+        BUYER_KEYPAIR="$TMP_DIR/buyer.json"
+        DEST_KEYPAIR="$TMP_DIR/dest.json"
+        solana-keygen new --no-bip39-passphrase --silent --force --outfile "$BUYER_KEYPAIR" >/dev/null
+        solana-keygen new --no-bip39-passphrase --silent --force --outfile "$DEST_KEYPAIR" >/dev/null
+        BUYER=$(solana-keygen pubkey "$BUYER_KEYPAIR")
+        DEST=$(solana-keygen pubkey "$DEST_KEYPAIR")
+        solana --url "$RPC_URL" --keypair "$KEYPAIR" transfer --allow-unfunded-recipient "$BUYER" 1 >/dev/null
+        solana --url "$RPC_URL" --keypair "$KEYPAIR" transfer --allow-unfunded-recipient "$DEST" 1 >/dev/null
+
+        BUYER_ATA=$(spl-token --url "$RPC_URL" address --token "$MINT" --owner "$BUYER" --verbose \
+            | awk '/Associated token address/ {print $4}')
+        DEST_ATA=$(spl-token --url "$RPC_URL" address --token "$MINT" --owner "$DEST" --verbose \
+            | awk '/Associated token address/ {print $4}')
+        spl-token --url "$RPC_URL" --fee-payer "$KEYPAIR" create-account --owner "$BUYER" "$MINT" >/dev/null
+        spl-token --url "$RPC_URL" --fee-payer "$KEYPAIR" create-account --owner "$DEST" "$MINT" >/dev/null
+
+        # Mint 1000 USDC to buyer
+        spl-token --url "$RPC_URL" --fee-payer "$KEYPAIR" mint "$MINT" 1000 "$BUYER_ATA" >/dev/null
+
+        # --- unique product + user per run -------------------------------
+        PRODUCT_SLUG="test-product-$(date +%s)-$$"
+        USER_ID=$(head -c 32 /dev/urandom | base64 | tr '/+' '_-' | tr -d '=\n')
+
+        echo "  buyer       = $BUYER"
+        echo "  buyer ata   = $BUYER_ATA"
+        echo "  dest ata    = $DEST_ATA"
+        echo "  slug        = $PRODUCT_SLUG"
+        echo "  user_id     = $USER_ID"
+
+        # --- helpers -----------------------------------------------------
+        CLI() {
+          cargo run --manifest-path "{{.PATH_PACKAGES_CLI}}/Cargo.toml" -q -- \
+            --rpc-url "$RPC_URL" market "$@"
+        }
+        balance_of() {
+          spl-token --url "$RPC_URL" account-info --address "$1" 2>/dev/null \
+            | awk '/Balance:/ {print $2}'
+        }
+        assert_balance() {
+          local account="$1" expected="$2" label="$3"
+          local actual
+          actual=$(balance_of "$account")
+          if [ "$actual" != "$expected" ]; then
+            echo "  ✗ $label: expected $expected, got $actual" >&2
+            exit 1
+          fi
+          printf "  ✓ %s = %s\n" "$label" "$actual"
+        }
+
+        # Derive vault PDA once up-front
+        VAULT=$(CLI pdas --program-id "$PROGRAM" --product-slug "$PRODUCT_SLUG" \
+            | awk '/^vault/ {print $3}')
+
+        # --- happy path --------------------------------------------------
+        echo "▸ initialize-pool"
+        CLI initialize-pool \
+          --program-id "$PROGRAM" \
+          --product-slug "$PRODUCT_SLUG" \
+          --usdc-mint "$MINT" >/dev/null
+        assert_balance "$VAULT" 0 "vault after init"
+        assert_balance "$BUYER_ATA" 1000 "buyer after init"
+
+        echo "▸ deposit (new participation)"
+        CLI deposit \
+          --program-id "$PROGRAM" \
+          --product-slug "$PRODUCT_SLUG" \
+          --user-id "$USER_ID" \
+          --buyer-keypair "$BUYER_KEYPAIR" \
+          --buyer-ata "$BUYER_ATA" \
+          --product-amount 25000000 \
+          --shipping-amount 4500000 >/dev/null
+        assert_balance "$VAULT" 29.5 "vault after 1st deposit"
+        assert_balance "$BUYER_ATA" 970.5 "buyer after 1st deposit"
+
+        echo "▸ deposit (top-up)"
+        CLI deposit \
+          --program-id "$PROGRAM" \
+          --product-slug "$PRODUCT_SLUG" \
+          --user-id "$USER_ID" \
+          --buyer-keypair "$BUYER_KEYPAIR" \
+          --buyer-ata "$BUYER_ATA" \
+          --product-amount 10000000 \
+          --shipping-amount 0 >/dev/null
+        assert_balance "$VAULT" 39.5 "vault after top-up"
+        assert_balance "$BUYER_ATA" 960.5 "buyer after top-up"
+
+        echo "▸ lock-pool"
+        CLI lock-pool --program-id "$PROGRAM" --product-slug "$PRODUCT_SLUG" >/dev/null
+
+        echo "▸ release"
+        CLI release \
+          --program-id "$PROGRAM" \
+          --product-slug "$PRODUCT_SLUG" \
+          --destination-ata "$DEST_ATA" >/dev/null
+        assert_balance "$VAULT" 0 "vault after release"
+        assert_balance "$DEST_ATA" 39.5 "dest after release"
+
+        echo "▸ re-seed vault (simulate order failure)"
+        spl-token --url "$RPC_URL" --fee-payer "$KEYPAIR" \
+          transfer --owner "$DEST_KEYPAIR" "$MINT" 39.5 "$VAULT" >/dev/null
+        assert_balance "$VAULT" 39.5 "vault after re-seed"
+        assert_balance "$DEST_ATA" 0 "dest after re-seed"
+
+        echo "▸ enter-refund-mode"
+        CLI enter-refund-mode --program-id "$PROGRAM" --product-slug "$PRODUCT_SLUG" >/dev/null
+
+        echo "▸ claim-refund"
+        CLI claim-refund \
+          --program-id "$PROGRAM" \
+          --product-slug "$PRODUCT_SLUG" \
+          --user-id "$USER_ID" \
+          --destination-ata "$BUYER_ATA" >/dev/null
+        assert_balance "$VAULT" 0 "vault after refund"
+        assert_balance "$BUYER_ATA" 1000 "buyer after refund"
+
+        echo ""
+        echo "✓ integration-test passed"

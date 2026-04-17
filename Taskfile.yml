@@ -14,6 +14,7 @@ includes:
   health-dashboard: ./taskfiles/frontend/health.yml
   solana-programs: ./taskfiles/solana/programs.yml
   solana-validator: ./taskfiles/solana/validator.yml
+  solana-tests: ./taskfiles/solana/tests.yml
   cli: ./taskfiles/cli/cli.yml
   debug: ./taskfiles/debug/debug.yml
   supplier: ./taskfiles/supplier/supplier.yml
