@@ -28,6 +28,7 @@ tasks:
       - cargo check -p groupshop-health --target wasm32-unknown-unknown
       - cargo check -p groupshop-admin --target wasm32-unknown-unknown
       - cargo check -p groupshop-cli
+      - task solana-programs:build-dev
 
   deploy:
     desc: "Deploy everything"

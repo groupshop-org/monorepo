@@ -31,6 +31,9 @@ async fn main() -> Result<()> {
             )
             .await?;
         }
+        Command::Market { sub } => {
+            command::market::run(&mut ctx, sub)?;
+        }
     }
 
     Ok(())

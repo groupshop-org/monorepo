@@ -1,8 +1,11 @@
 use pinocchio::{entrypoint, AccountView, Address, ProgramResult};
-use solana_program_log::log;
 
-// Entry point of the program, called by the Solana runtime when the program is invoked
-//
+pub mod errors;
+pub mod instruction;
+pub mod pda;
+pub mod processor;
+pub mod state;
+
 entrypoint!(process_instruction);
 
 pub fn process_instruction(
@@ -10,6 +13,5 @@ pub fn process_instruction(
     accounts: &mut [AccountView],
     instruction_data: &[u8],
 ) -> ProgramResult {
-    log("Hello from my pinocchio program!");
-    Ok(())
+    processor::process(program_id, accounts, instruction_data)
 }

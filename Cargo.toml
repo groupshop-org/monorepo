@@ -67,7 +67,12 @@ getrandom = { version = "0.3", features = ["wasm_js"] }
 
 # Solana (on-chain)
 pinocchio = {version = "0.11.1", features = ["cpi"]}
+pinocchio-system = "0.6"
+pinocchio-token = "0.6"
 solana-program-log = "1.1.0"
+
+# Hashing (used by both on-chain and backend)
+sha2 = { version = "0.10", default-features = false }
 
 # Solana (client)
 solana-sdk = "2"

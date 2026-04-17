@@ -12,4 +12,14 @@ crate-type = ["cdylib"]
 
 [dependencies]
 pinocchio = { workspace = true }
+pinocchio-system = { workspace = true }
+pinocchio-token = { workspace = true }
 solana-program-log = { workspace = true }
+
+# Host-only: activate the `curve25519` feature on solana-address (transitively
+# used by pinocchio) so `Address::create_program_address` is visible to
+# rust-analyzer / host `cargo check`. On the SBF target the function is
+# gated by `target_os = "solana"` and uses a syscall, so this dep is absent
+# there — the on-chain build is unaffected.
+[target.'cfg(not(target_os = "solana"))'.dependencies]
+solana-address = { version = "2", features = ["curve25519"] }

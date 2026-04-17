@@ -206,3 +206,15 @@ new_slug_id_type!(AccountUsername);
 new_slug_id_type!(ProductId);
 new_slug_id_type!(ProductCategoryId);
 new_slug_id_type!(ProductBrandId);
+new_hash_id_type!(ProductHash);
+
+impl ProductId {
+    /// SHA-256 of the slug bytes. Used as a 32-byte identity on-chain (PDA seeds).
+    pub fn hash(&self) -> ProductHash {
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(self.as_str().as_bytes());
+        let bytes: [u8; 32] = hasher.finalize().into();
+        ProductHash::from(bytes)
+    }
+}
