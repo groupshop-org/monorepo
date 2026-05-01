@@ -33,7 +33,7 @@
       "preview_urls": false,
       "vars": {
         "APP_ENV": "prod",
-        "ALLOWED_ORIGINS": "https://groupshop.org",
+        "ALLOWED_ORIGINS": "https://groupshop.org,https://groupshop-admin.pages.dev",
         "AUTH_COOKIE_SAMESITE": "strict",
         "DB_BINDING": "DB_GROUPSHOP",
         "DO_BINDING_AUTH_TOKEN_REFRESH": "DO_GROUPSHOP_AUTH_TOKEN_REFRESH",

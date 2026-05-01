@@ -3,6 +3,7 @@ use clap::Subcommand;
 pub mod import;
 pub mod invoke;
 pub mod market;
+pub mod wipe_catalog;
 
 #[derive(Subcommand, Clone, Debug)]
 pub enum Command {
@@ -33,6 +34,13 @@ pub enum Command {
         /// Dry run — parse and report without creating anything
         #[arg(long, default_value = "false")]
         dry_run: bool,
+    },
+
+    /// Wipe all products, brands, and categories from the catalog
+    WipeCatalog {
+        /// API base URL (e.g. http://localhost:8787)
+        #[arg(long)]
+        api_url: String,
     },
 
     /// Interact with the Groupshop market program (group-buying escrow).

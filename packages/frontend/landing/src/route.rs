@@ -10,6 +10,7 @@ use groupshop_frontend_shared::window;
 pub enum Route {
     Home,
     Product { id: ProductId },
+    Help,
     PrivacyPolicy,
     TermsOfService,
     Signin,
@@ -50,6 +51,7 @@ impl Route {
                 Ok(id) => Self::Product { id },
                 Err(_) => Self::NotFound,
             },
+            ["help"] => Self::Help,
             ["privacy-policy"] => Self::PrivacyPolicy,
             ["terms-of-service"] => Self::TermsOfService,
             ["signin"] => Self::Signin,
@@ -88,6 +90,7 @@ impl Route {
         match self {
             Self::Home => "/".to_string(),
             Self::Product { id } => format!("/product/{}", id.as_str()),
+            Self::Help => "/help".to_string(),
             Self::PrivacyPolicy => "/privacy-policy".to_string(),
             Self::TermsOfService => "/terms-of-service".to_string(),
             Self::Signin => "/signin".to_string(),
@@ -134,6 +137,7 @@ impl Route {
             None => match self {
                 Home
                 | Product { .. }
+                | Help
                 | PrivacyPolicy
                 | TermsOfService
                 | Signin

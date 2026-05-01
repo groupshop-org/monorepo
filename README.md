@@ -69,13 +69,24 @@ Relevant Solana env vars:
 ```bash
 SOLANA_NETWORK="local"   # local or devnet
 SOLANA_RPC_URL_DEVNET="https://api.devnet.solana.com"
-SOLANA_MARKET_PROGRAM_ID_DEVNET=""
-SOLANA_USDC_MINT_DEVNET=""
+SOLANA_MARKET_PROGRAM_ID_DEVNET="" # optional after task solana-programs:deploy-devnet
+SOLANA_USDC_MINT_DEVNET="4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"
+SOLANA_NETWORK_DEPLOY="devnet"
+SOLANA_DEPLOY_KEYPAIR="" # defaults to ~/.config/solana/groupshop-devnet-deploy.json
+SOLANA_AUTHORITY_KEYPAIR="" # defaults to ~/.config/solana/id.json
+CF_PAGES_BRANCH_LANDING="main"
+CF_PAGES_BRANCH_ADMIN="prod"
+CF_PAGES_BRANCH_HEALTH="prod"
+URL_ADMIN_PROD="https://groupshop-admin.pages.dev"
+URL_HEALTH_PROD="https://groupshop-health.david-551.workers.dev"
+URL_HEALTH_DASHBOARD_PROD="https://groupshop-health.pages.dev"
 ```
 
 Notes:
 - For `SOLANA_NETWORK=local`, taskfiles derive the market program ID and local USDC mint automatically from `.deployments/local/`.
-- For `SOLANA_NETWORK=devnet`, you must supply `SOLANA_MARKET_PROGRAM_ID_DEVNET` and `SOLANA_USDC_MINT_DEVNET`.
+- For `SOLANA_NETWORK=devnet`, taskfiles derive `SOLANA_MARKET_PROGRAM_ID_DEVNET` from `.deployments/devnet/market-program.json` when present, or from the explicit env var.
+- `SOLANA_USDC_MINT_DEVNET` defaults to Circle's Solana Devnet USDC mint: `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU`.
+- Production deploy tasks use `SOLANA_NETWORK_DEPLOY=devnet` by default instead of `SOLANA_NETWORK`, so local development settings do not accidentally leak into Cloudflare deploys.
 - The backend authority signer used for local development defaults to `~/.config/solana/id.json` and is passed into the Worker as `SOLANA_AUTHORITY_KEYPAIR_JSON`.
 
 ## Local Development
@@ -243,13 +254,37 @@ To fund or top up the same wallet manually:
 task solana-programs:fund-local-wallet -- "$SOLANA_WALLET_DEV"
 ```
 
-7. For non-local networks, ensure the wallet has SOL and USDC on the configured cluster.
+7. For non-local networks (devnet), fund the wallet with devnet SOL and devnet USDC — see below.
 8. Open a product detail page.
 9. Click the Phantom deposit button.
 10. Approve the message signature.
 11. Approve the transaction.
 
 For `SOLANA_NETWORK=local`, deposits are built against the repo's validator at `http://localhost:9086`.
+
+### Funding a wallet on devnet
+
+Switch Phantom to **Devnet** (Settings → Developer Settings → Change Network).
+
+**Devnet SOL** (transaction fees):
+
+```
+https://faucet.solana.com/
+```
+
+Paste your wallet address, select Devnet, and request SOL. If rate-limited, retry after a few minutes.
+
+**Devnet USDC** (escrow deposits):
+
+```
+https://faucet.circle.com/
+```
+
+Select USDC on Solana, network Devnet, paste your wallet address. This also creates the USDC token account if it doesn't exist yet. The configured devnet USDC mint is:
+
+```
+4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU
+```
 
 ## Solana CLI Helpers
 
@@ -274,7 +309,74 @@ task cli:market -- lock-pool --program-id "$(task solana-programs:id-market-loca
 
 ## Deployment
 
-Deploy backend and landing:
+### Devnet Solana setup
+
+Create a dedicated devnet deploy keypair outside the repo:
+
+```bash
+task solana-programs:create-devnet-deploy-keypair
+```
+
+Back up this keypair securely. It is the program deploy/upgrade authority. The task suppresses seed phrase output for new keys; do not commit the JSON file or paste it into `.env`.
+
+Fund that deploy wallet with devnet SOL, then confirm the configured deploy state:
+
+```bash
+task solana-programs:devnet-deploy-info
+```
+
+If the public devnet faucet is rate-limited, fund the printed `deploy_pubkey` manually from another devnet wallet or faucet. `task deploy-all` cannot deploy the Solana program while `deploy_sol` is `0`.
+
+Deploy the market program to devnet:
+
+```bash
+task solana-programs:deploy-devnet
+```
+
+This writes `.deployments/devnet/market-program.json`, creates `.deployments/devnet/market-program-keypair.json` on first deploy to keep the program ID stable, and refreshes the landing manifest with the devnet program ID. The deploy keypair is only for program deployment/upgrade authority. The backend runtime authority is a separate keypair used to co-sign escrow instructions.
+
+`task deploy-all` uploads the backend runtime secrets from local `.env` and `SOLANA_AUTHORITY_KEYPAIR` before deploying the API. To rotate the runtime authority manually:
+
+```bash
+wrangler secret put SOLANA_AUTHORITY_KEYPAIR_JSON -c cloudflare/api/wrangler.jsonc --env prod
+```
+
+Paste a Solana keypair JSON array when prompted. Do not commit this keypair or put the JSON itself in `.env`.
+
+Fund buyer/test wallets with devnet SOL and Circle devnet USDC. The configured devnet USDC mint is:
+
+```bash
+4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU
+```
+
+Circle's docs and faucet use this mint for Solana Devnet USDC.
+
+Default production URLs for secondary surfaces use the generated Cloudflare hostnames:
+- `https://groupshop-admin.pages.dev` for admin
+- `https://groupshop-health.david-551.workers.dev` for the health Worker
+- `https://groupshop-health.pages.dev` for the health dashboard Pages site
+
+Override `URL_ADMIN_PROD`, `URL_HEALTH_PROD`, and `URL_HEALTH_DASHBOARD_PROD` in `.env` after custom domains are routed in Cloudflare.
+
+Pages deploy tasks create missing Cloudflare Pages projects automatically and deploy to explicit branch labels. `groupshop-landing` currently uses `main` as the Cloudflare Pages production branch for `groupshop.org`; admin and health default to `prod`.
+
+Deploy all production surfaces:
+
+```bash
+task deploy-all
+```
+
+This runs:
+- `task solana-programs:deploy-devnet`
+- `task db:migrations-apply-prod`
+- `task api:put-prod-secrets`
+- `task api:deploy`
+- `task landing:deploy`
+- `task admin:deploy`
+- `task health:deploy`
+- `task health-dashboard:deploy`
+
+Deploy only backend and landing:
 
 ```bash
 task deploy
@@ -285,16 +387,52 @@ Or separately:
 ```bash
 task api:deploy
 task landing:deploy
+task admin:deploy
+task health:deploy
+task health-dashboard:deploy
 ```
 
 For non-local deployment you must provide real Solana values:
-- `SOLANA_NETWORK`
-- `SOLANA_RPC_URL`
-- `SOLANA_MARKET_PROGRAM_ID`
-- `SOLANA_USDC_MINT`
-- `SOLANA_AUTHORITY_KEYPAIR_JSON`
+- `SOLANA_NETWORK_DEPLOY`
+- `SOLANA_RPC_URL_DEVNET`
+- `SOLANA_MARKET_PROGRAM_ID_DEVNET` or `.deployments/devnet/market-program.json`
+- `SOLANA_USDC_MINT_DEVNET`
+- `SOLANA_AUTHORITY_KEYPAIR` pointing at the backend runtime authority keypair file
+- `URL_ADMIN_PROD`, `URL_HEALTH_PROD`, and `URL_HEALTH_DASHBOARD_PROD` if the defaults are not the deployed Cloudflare routes
 
 For `SOLANA_NETWORK=devnet`, make sure the landing build and backend deploy use the same program ID and USDC mint values.
+
+## Product Catalog Import
+
+The catalog is populated from a Qogita CSV export. The import is additive (safe to re-run). To do a full refresh:
+
+1. **Deploy** so the latest API code (including any new endpoints) is live on prod:
+   ```bash
+   task deploy-all
+   ```
+
+2. **Wipe** the existing catalog (products, brands, categories):
+   ```bash
+   task supplier:wipe-catalog-prod
+   ```
+
+3. **Import** from the Qogita CSV:
+   ```bash
+   task supplier:qogita-import-prod
+   ```
+
+The import applies these filters before uploading:
+- Minimum MOQ of 5 (configurable via `--min-moq`)
+- Maximum 10 products per category (configurable via `--max-per-category`)
+- Products with a placeholder/missing image are excluded
+
+Progress is printed every 50 categories, 100 brands, and 100 products. Expect roughly 15–20 minutes end-to-end for a full import. Errors (e.g. duplicates) are counted as skipped and do not stop the run.
+
+The CSV file lives at the path configured by `PATH_SUPPLIER_DATA` in `.env` / `taskfiles/config.yml`. To download a fresh copy from Qogita first:
+
+```bash
+task supplier:qogita-download
+```
 
 ## Useful Commands
 
@@ -304,7 +442,9 @@ task lint
 task solana-programs:bootstrap-local
 task solana-programs:write-frontend-config
 task solana-programs:deploy-local
+task solana-programs:deploy-devnet
 task solana-programs:id-market-local
+task solana-programs:id-market-devnet
 task solana-tests:integration-test
 task cli:market -- --help
 ```

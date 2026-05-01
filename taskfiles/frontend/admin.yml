@@ -9,11 +9,25 @@ vars:
   PATH_TRUNK_DIST_ADMIN: '{{joinPath .PATH_TRUNK_DIST "admin"}}'
 
 tasks:
+  ensure-pages-project:
+    desc: "Ensure the admin Cloudflare Pages project exists"
+    env:
+      CLOUDFLARE_API_TOKEN: "{{.CLOUDFLARE_DEPLOY_API_TOKEN}}"
+    cmds:
+      - |
+        set -euo pipefail
+        PROJECT="{{.CF_PAGES_PROJECT_ADMIN}}"
+        if wrangler pages project list --json | jq -e --arg project "$PROJECT" '.[] | select(."Project Name" == $project)' >/dev/null; then
+          echo "Cloudflare Pages project exists: $PROJECT"
+        else
+          wrangler pages project create "$PROJECT" --production-branch "{{.CF_PAGES_BRANCH_ADMIN}}"
+        fi
+
   build:
     desc: "Build the admin app for production"
     dir: "{{.PATH_PACKAGE_ADMIN}}"
     env:
-      URL_API: "${URL_API_PROD}"
+      URL_API: "{{.URL_API_PROD}}"
       URL_LANDING: "{{.URL_LANDING_PROD}}"
     cmds:
       - >
@@ -43,4 +57,8 @@ tasks:
     env:
       CLOUDFLARE_API_TOKEN: "{{.CLOUDFLARE_DEPLOY_API_TOKEN}}"
     cmds:
-      - wrangler pages deploy "{{.PATH_TRUNK_DIST_ADMIN}}" --project-name=groupshop-admin
+      - task: ensure-pages-project
+      - >
+        wrangler pages deploy "{{.PATH_TRUNK_DIST_ADMIN}}"
+        --project-name="{{.CF_PAGES_PROJECT_ADMIN}}"
+        --branch "{{.CF_PAGES_BRANCH_ADMIN}}"

@@ -1,6 +1,9 @@
 use wasm_bindgen::prelude::*;
 
-use crate::db::tables::{SQL_TABLE_PRODUCT_CATALOG, SQL_TABLE_USER_PARTICIPATION};
+use crate::db::tables::{
+    SQL_TABLE_PRODUCT_BRAND, SQL_TABLE_PRODUCT_CATALOG, SQL_TABLE_PRODUCT_CATEGORY,
+    SQL_TABLE_USER_PARTICIPATION,
+};
 use crate::{
     prelude::*,
     utils::{db_execute, db_load, db_load_all, db_prepare, deserialize_d1_bool, get_d1},
@@ -244,6 +247,16 @@ impl ProductCatalogDb {
             &[JsValue::from_str(id.as_str())],
         )?)
         .await
+    }
+
+    pub async fn delete_all(ctx: &ApiContext) -> ApiResult<()> {
+        let db = get_d1(&ctx.env)?;
+        db_execute(db_prepare(&db, format!("DELETE FROM {SQL_TABLE_PRODUCT_CATALOG}"), &[])?)
+            .await?;
+        db_execute(db_prepare(&db, format!("DELETE FROM {SQL_TABLE_PRODUCT_BRAND}"), &[])?)
+            .await?;
+        db_execute(db_prepare(&db, format!("DELETE FROM {SQL_TABLE_PRODUCT_CATEGORY}"), &[])?)
+            .await
     }
 }
 

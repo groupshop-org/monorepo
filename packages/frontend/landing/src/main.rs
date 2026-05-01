@@ -20,7 +20,7 @@ use wasm_bindgen_futures::spawn_local;
 
 use crate::{
     api::ApiCtx,
-    legal::{privacy_policy, terms_of_service, PageContent},
+    legal::{help_page, privacy_policy, terms_of_service, PageContent},
     route::{Resolved, Route},
     wallet::render_deposit_panel,
 };
@@ -98,6 +98,10 @@ fn render(route: Route) -> Dom {
         .child(match route {
             Route::Home => render_home(),
             Route::Product { id } => render_product_detail(id),
+            Route::Help => render_legal(
+                help_page(),
+                "How to set up your Phantom wallet with devnet SOL and USDC to place a group order.",
+            ),
             Route::PrivacyPolicy => render_legal(
                 privacy_policy(),
                 "How Groupshop collects, uses, shares, and protects information in connection with the website and service.",
@@ -1641,12 +1645,26 @@ fn how_it_works_modal_state() -> &'static Mutable<bool> {
     STATE.get_or_init(|| Mutable::new(false))
 }
 
+fn beta_banner() -> Dom {
+    html!("div", {
+        .style("background", "#0d3832")
+        .style("color", "#e8f5f3")
+        .style("text-align", "center")
+        .style("padding", "0.5rem 1rem")
+        .style("font-size", "0.82rem")
+        .style("font-weight", "600")
+        .style("letter-spacing", "0.03em")
+        .text("Currently in beta for Colosseum Frontier Hackathon \u{2014} devnet only")
+    })
+}
+
 fn site_header() -> Dom {
     let profile = ApiCtx::get().profile.get_cloned();
     html!("div", {
         // Wrapping div so we can render the How It Works modal as a sibling
         // of the actual <header>. The modal is positioned: fixed, so its
         // physical place in the tree doesn't matter visually.
+        .child(beta_banner())
         .child(site_header_inner(profile))
         .child_signal(how_it_works_modal_state().signal().map(|open| {
             if open { Some(render_how_it_works_modal()) } else { None }
@@ -1690,6 +1708,12 @@ fn site_header_inner(profile: Option<AccountProfile>) -> Dom {
                         how_it_works_modal_state().set(true);
                     })
                 }),
+                html!("a", {
+                    .class(&*chrome::NAV_LINK)
+                    .class(&*typography::NAV_LABEL)
+                    .attr("href", "/help")
+                    .text("Getting Started")
+                }),
             ])
         }))
         .child(html!("div", {
@@ -1710,6 +1734,14 @@ fn site_footer() -> Dom {
             .children([
                 html!("span", {
                     .text("Real-world group buying, secured on-chain. ")
+                }),
+                html!("a", {
+                    .class(&*chrome::FOOTER_LINK)
+                    .attr("href", "/help")
+                    .text("Getting Started")
+                }),
+                html!("span", {
+                    .text(" · ")
                 }),
                 html!("a", {
                     .class(&*chrome::FOOTER_LINK)
@@ -1908,6 +1940,59 @@ fn action_button(label: &'static str, on_click: impl Fn() + 'static) -> Dom {
     })
 }
 
+fn eye_icon(visible: bool) -> Dom {
+    if visible {
+        svg!("svg", {
+            .attr("viewBox", "0 0 24 24")
+            .attr("width", "18")
+            .attr("height", "18")
+            .attr("fill", "none")
+            .attr("aria-hidden", "true")
+            .children([
+                svg!("path", {
+                    .attr("stroke", "currentColor")
+                    .attr("stroke-width", "2")
+                    .attr("stroke-linecap", "round")
+                    .attr("d", "M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24")
+                }),
+                svg!("line", {
+                    .attr("x1", "1")
+                    .attr("y1", "1")
+                    .attr("x2", "23")
+                    .attr("y2", "23")
+                    .attr("stroke", "currentColor")
+                    .attr("stroke-width", "2")
+                    .attr("stroke-linecap", "round")
+                }),
+            ])
+        })
+    } else {
+        svg!("svg", {
+            .attr("viewBox", "0 0 24 24")
+            .attr("width", "18")
+            .attr("height", "18")
+            .attr("fill", "none")
+            .attr("aria-hidden", "true")
+            .children([
+                svg!("path", {
+                    .attr("stroke", "currentColor")
+                    .attr("stroke-width", "2")
+                    .attr("stroke-linecap", "round")
+                    .attr("stroke-linejoin", "round")
+                    .attr("d", "M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z")
+                }),
+                svg!("circle", {
+                    .attr("cx", "12")
+                    .attr("cy", "12")
+                    .attr("r", "3")
+                    .attr("stroke", "currentColor")
+                    .attr("stroke-width", "2")
+                }),
+            ])
+        })
+    }
+}
+
 fn input_field(
     label: &'static str,
     name: &'static str,
@@ -1915,18 +2000,64 @@ fn input_field(
     autocomplete: &'static str,
     on_input: impl Fn(String) + 'static,
 ) -> Dom {
-    html!("label", {
-        .style("display", "grid")
-        .style("gap", "0.45rem")
-        .child(html!("span", {
-            .style("font-size", "0.82rem")
-            .style("font-weight", "700")
-            .style("letter-spacing", "0.03em")
-            .style("text-transform", "uppercase")
-            .style("color", "rgba(10, 18, 17, 0.74)")
-            .text(label)
-        }))
-        .child(html!("input" => web_sys::HtmlInputElement, {
+    let label_span = html!("span", {
+        .style("font-size", "0.82rem")
+        .style("font-weight", "700")
+        .style("letter-spacing", "0.03em")
+        .style("text-transform", "uppercase")
+        .style("color", "rgba(10, 18, 17, 0.74)")
+        .text(label)
+    });
+
+    let input_child = if input_type == "password" {
+        let show = Mutable::new(false);
+        html!("div", {
+            .style("position", "relative")
+            .child(html!("input" => web_sys::HtmlInputElement, {
+                .attr("name", name)
+                .attr_signal("type", show.signal().map(|s| if s { "text" } else { "password" }))
+                .attr("autocomplete", autocomplete)
+                .style("width", "100%")
+                .style("padding", "0.98rem 3rem 0.98rem 1rem")
+                .style("border-radius", "1rem")
+                .style("border", "1px solid rgba(13, 56, 50, 0.2)")
+                .style("background", "rgba(255,255,255,0.96)")
+                .style("color", "#102120")
+                .style("box-sizing", "border-box")
+                .style("outline", "none")
+                .style("font-size", "1rem")
+                .style("box-shadow", "0 1px 0 rgba(255,255,255,0.55) inset")
+                .event(move |evt: events::Input| {
+                    let value = evt
+                        .target()
+                        .and_then(|target| target.dyn_into::<web_sys::HtmlInputElement>().ok())
+                        .map(|input| input.value())
+                        .unwrap_or_default();
+                    on_input(value);
+                })
+            }))
+            .child(html!("button", {
+                .attr("type", "button")
+                .attr("aria-label", "Toggle password visibility")
+                .style("position", "absolute")
+                .style("right", "0.75rem")
+                .style("top", "50%")
+                .style("transform", "translateY(-50%)")
+                .style("background", "none")
+                .style("border", "none")
+                .style("cursor", "pointer")
+                .style("padding", "0.25rem")
+                .style("display", "flex")
+                .style("align-items", "center")
+                .style("color", "rgba(13, 56, 50, 0.5)")
+                .child_signal(show.signal().map(|s| Some(eye_icon(s))))
+                .event(clone!(show => move |_: events::Click| {
+                    show.set(!show.get());
+                }))
+            }))
+        })
+    } else {
+        html!("input" => web_sys::HtmlInputElement, {
             .attr("name", name)
             .attr("type", input_type)
             .attr("autocomplete", autocomplete)
@@ -1948,7 +2079,14 @@ fn input_field(
                     .unwrap_or_default();
                 on_input(value);
             })
-        }))
+        })
+    };
+
+    html!("label", {
+        .style("display", "grid")
+        .style("gap", "0.45rem")
+        .child(label_span)
+        .child(input_child)
     })
 }
 

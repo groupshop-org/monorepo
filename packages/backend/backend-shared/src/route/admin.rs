@@ -27,6 +27,7 @@ pub enum ApiAdminRoute {
     CreateBrand,
     UpdateBrand,
     DeleteBrand,
+    WipeCatalog,
 }
 
 impl std::fmt::Display for ApiAdminRoute {
@@ -47,6 +48,7 @@ impl std::fmt::Display for ApiAdminRoute {
             Self::CreateBrand => "create-brand",
             Self::UpdateBrand => "update-brand",
             Self::DeleteBrand => "delete-brand",
+            Self::WipeCatalog => "wipe-catalog",
         };
 
         write!(f, "{value}")
@@ -84,6 +86,7 @@ impl TryFrom<&http::Uri> for ApiAdminRoute {
             ["create-brand"] => Ok(Self::CreateBrand),
             ["update-brand"] => Ok(Self::UpdateBrand),
             ["delete-brand"] => Ok(Self::DeleteBrand),
+            ["wipe-catalog"] => Ok(Self::WipeCatalog),
             _ => Err(ApiError::UnknownRoute(uri.path().to_string())),
         }
     }

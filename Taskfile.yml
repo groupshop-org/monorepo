@@ -37,6 +37,18 @@ tasks:
       - task api:deploy
       - task landing:deploy
 
+  deploy-all:
+    desc: "Deploy all production surfaces and required live dependencies"
+    cmds:
+      - task solana-programs:deploy-devnet
+      - task db:migrations-apply-prod
+      - task api:put-prod-secrets
+      - task api:deploy
+      - task landing:deploy
+      - task admin:deploy
+      - task health:deploy
+      - task health-dashboard:deploy
+
   dev:
     desc: "Run everything in development mode"
     deps:

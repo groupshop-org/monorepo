@@ -68,7 +68,7 @@ pub async fn handle_escrow_deposit_intent(
         product_name: product.name.clone(),
         wallet_address: wallet.clone(),
         network: ctx.config.solana.network.clone(),
-        rpc_url: ctx.config.solana.rpc_url.clone(),
+        rpc_url: ctx.config.solana.rpc_url_client.clone(),
         program_id: ctx.config.solana.market_program_id.clone(),
         usdc_mint: ctx.config.solana.usdc_mint.clone(),
         authority_address: authority_address.clone(),
@@ -89,7 +89,7 @@ pub async fn handle_escrow_deposit_intent(
 
     Ok(AccountEscrowDepositIntentResponse {
         network: ctx.config.solana.network.clone(),
-        rpc_url: ctx.config.solana.rpc_url.clone(),
+        rpc_url: ctx.config.solana.rpc_url_client.clone(),
         program_id: ctx.config.solana.market_program_id.clone(),
         usdc_mint: ctx.config.solana.usdc_mint.clone(),
         authority_address,
@@ -367,7 +367,7 @@ pub async fn handle_escrow_refund_build(
 
     Ok(AccountEscrowRefundBuildResponse {
         network: ctx.config.solana.network.clone(),
-        rpc_url: ctx.config.solana.rpc_url.clone(),
+        rpc_url: ctx.config.solana.rpc_url_client.clone(),
         program_id: ctx.config.solana.market_program_id.clone(),
         usdc_mint: ctx.config.solana.usdc_mint.clone(),
         authority_address: recipe.authority.to_base58(),

@@ -22,7 +22,10 @@ vars:
   PATH_DB_DEV: '{{joinPath .PATH_CLOUDFLARE_API "db" "local" "dev"}}'
   PATH_TARGET_DEPLOY: '{{joinPath .PATH_REPO_ROOT "target" "deploy"}}'
   PATH_DEPLOYMENTS_LOCAL: '{{joinPath .PATH_REPO_ROOT ".deployments" "local"}}'
+  PATH_DEPLOYMENTS_DEVNET: '{{joinPath .PATH_REPO_ROOT ".deployments" "devnet"}}'
   PATH_DEPLOYMENT_MARKET_PROGRAM_LOCAL: '{{joinPath .PATH_DEPLOYMENTS_LOCAL "market-program.json"}}'
+  PATH_DEPLOYMENT_MARKET_PROGRAM_DEVNET: '{{joinPath .PATH_DEPLOYMENTS_DEVNET "market-program.json"}}'
+  PATH_DEPLOYMENT_MARKET_PROGRAM_KEYPAIR_DEVNET: '{{joinPath .PATH_DEPLOYMENTS_DEVNET "market-program-keypair.json"}}'
   PATH_DEPLOYMENT_USDC_MINT_LOCAL: '{{joinPath .PATH_DEPLOYMENTS_LOCAL "usdc-mint.json"}}'
   PATH_DEPLOYMENT_USDC_MINT_KEYPAIR_LOCAL: '{{joinPath .PATH_DEPLOYMENTS_LOCAL "usdc-mint-keypair.json"}}'
   PATH_LANDING_SOLANA_DEPLOYMENTS: '{{joinPath .PATH_PACKAGE_LANDING "assets" "solana-deployments.json"}}'
@@ -52,13 +55,28 @@ vars:
   URL_SOLANA_VALIDATOR_RPC_DEV: "http://localhost:{{.PORT_SOLANA_VALIDTOR_DEV_RPC}}"
   URL_HEALTH_DEV: "http://localhost:{{.PORT_HEALTH_DEV}}"
   URL_HEALTH_DASHBOARD_DEV: "http://localhost:{{.PORT_HEALTH_DASHBOARD_DEV}}"
+  URL_HEALTH_PROD:
+    sh: printf "%s" "${URL_HEALTH_PROD:-https://groupshop-health.david-551.workers.dev}"
+  URL_HEALTH_DASHBOARD_PROD:
+    sh: printf "%s" "${URL_HEALTH_DASHBOARD_PROD:-https://groupshop-health.pages.dev}"
   URL_ADMIN_DEV: "http://127.0.0.1:{{.PORT_ADMIN_DEV}}"
-  URL_ADMIN_PROD: "https://admin.groupshop.org"
+  URL_ADMIN_PROD:
+    sh: printf "%s" "${URL_ADMIN_PROD:-https://groupshop-admin.pages.dev}"
+  URL_LANDING_MEDIA_PROD: "https://groupshop.org/media"
 
   # CLOUDFLARE BINDINGS
   CF_BINDING_DB: "DB_GROUPSHOP"
   CF_BINDING_DO_AUTH_TOKEN_REFRESH: "DO_GROUPSHOP_AUTH_TOKEN_REFRESH"
   CF_BINDING_DO_AUTH_TOKEN_ONCE: "DO_GROUPSHOP_AUTH_TOKEN_ONCE"
+  CF_PAGES_PROJECT_LANDING: "groupshop-landing"
+  CF_PAGES_PROJECT_ADMIN: "groupshop-admin"
+  CF_PAGES_PROJECT_HEALTH: "groupshop-health"
+  CF_PAGES_BRANCH_LANDING:
+    sh: printf "%s" "${CF_PAGES_BRANCH_LANDING:-main}"
+  CF_PAGES_BRANCH_ADMIN:
+    sh: printf "%s" "${CF_PAGES_BRANCH_ADMIN:-prod}"
+  CF_PAGES_BRANCH_HEALTH:
+    sh: printf "%s" "${CF_PAGES_BRANCH_HEALTH:-prod}"
 
   # AUTH / EMAIL
   API_ALLOWED_ORIGINS_DEV: "{{.URL_LANDING_DEV}},{{.URL_ADMIN_DEV}}"
@@ -72,12 +90,62 @@ vars:
     sh: printf "%s" "${SOLANA_NETWORK:-local}"
   SOLANA_RPC_URL_DEVNET:
     sh: printf "%s" "${SOLANA_RPC_URL_DEVNET:-https://api.devnet.solana.com}"
+  # Client-facing RPC returned in responses and embedded in the frontend manifest.
+  # Defaults to SOLANA_RPC_URL_DEVNET. Set this to the public endpoint when
+  # SOLANA_RPC_URL_DEVNET points to a private provider that blocks browser/Phantom access.
+  SOLANA_RPC_URL_CLIENT_DEVNET:
+    sh: printf "%s" "${SOLANA_RPC_URL_CLIENT_DEVNET:-${SOLANA_RPC_URL_DEVNET:-https://api.devnet.solana.com}}"
   SOLANA_MARKET_PROGRAM_ID_DEVNET:
-    sh: printf "%s" "${SOLANA_MARKET_PROGRAM_ID_DEVNET:-}"
+    sh: |
+      if [ -n "${SOLANA_MARKET_PROGRAM_ID_DEVNET:-}" ]; then
+        printf "%s" "$SOLANA_MARKET_PROGRAM_ID_DEVNET"
+      elif [ -f "{{.PATH_DEPLOYMENT_MARKET_PROGRAM_DEVNET}}" ]; then
+        jq -r '.programId // ""' "{{.PATH_DEPLOYMENT_MARKET_PROGRAM_DEVNET}}"
+      else
+        printf ""
+      fi
   SOLANA_USDC_MINT_DEVNET:
-    sh: printf "%s" "${SOLANA_USDC_MINT_DEVNET:-}"
+    sh: printf "%s" "${SOLANA_USDC_MINT_DEVNET:-4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU}"
   SOLANA_WALLET_DEV:
     sh: printf "%s" "${SOLANA_WALLET_DEV:-}"
+  SOLANA_DEPLOY_KEYPAIR:
+    sh: printf "%s" "${SOLANA_DEPLOY_KEYPAIR:-{{.HOME}}/.config/solana/groupshop-devnet-deploy.json}"
+  SOLANA_AUTHORITY_KEYPAIR:
+    sh: printf "%s" "${SOLANA_AUTHORITY_KEYPAIR:-{{.HOME}}/.config/solana/id.json}"
+  SOLANA_NETWORK_DEPLOY:
+    sh: printf "%s" "${SOLANA_NETWORK_DEPLOY:-devnet}"
+  SOLANA_RPC_URL_DEPLOY:
+    sh: |
+      if [ "{{.SOLANA_NETWORK_DEPLOY}}" = "devnet" ]; then
+        printf "%s" "{{.SOLANA_RPC_URL_DEVNET}}"
+      else
+        echo "unsupported SOLANA_NETWORK_DEPLOY={{.SOLANA_NETWORK_DEPLOY}}; expected devnet" >&2
+        exit 1
+      fi
+  SOLANA_RPC_URL_CLIENT_DEPLOY:
+    sh: |
+      if [ "{{.SOLANA_NETWORK_DEPLOY}}" = "devnet" ]; then
+        printf "%s" "{{.SOLANA_RPC_URL_CLIENT_DEVNET}}"
+      else
+        echo "unsupported SOLANA_NETWORK_DEPLOY={{.SOLANA_NETWORK_DEPLOY}}; expected devnet" >&2
+        exit 1
+      fi
+  SOLANA_MARKET_PROGRAM_ID_DEPLOY:
+    sh: |
+      if [ "{{.SOLANA_NETWORK_DEPLOY}}" = "devnet" ]; then
+        printf "%s" "{{.SOLANA_MARKET_PROGRAM_ID_DEVNET}}"
+      else
+        echo "unsupported SOLANA_NETWORK_DEPLOY={{.SOLANA_NETWORK_DEPLOY}}; expected devnet" >&2
+        exit 1
+      fi
+  SOLANA_USDC_MINT_DEPLOY:
+    sh: |
+      if [ "{{.SOLANA_NETWORK_DEPLOY}}" = "devnet" ]; then
+        printf "%s" "{{.SOLANA_USDC_MINT_DEVNET}}"
+      else
+        echo "unsupported SOLANA_NETWORK_DEPLOY={{.SOLANA_NETWORK_DEPLOY}}; expected devnet" >&2
+        exit 1
+      fi
   SOLANA_AUTHORITY_KEYPAIR_JSON_LOCAL:
     sh: cat "{{.HOME}}/.config/solana/id.json"
   SOLANA_MARKET_PROGRAM_ID_LOCAL:
