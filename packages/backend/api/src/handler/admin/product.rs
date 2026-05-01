@@ -16,6 +16,7 @@ pub async fn handle_admin_list_products(
         req.brand_id.as_ref(),
         search,
         false,
+        false,
     )
     .await?;
 
@@ -26,6 +27,7 @@ pub async fn handle_admin_list_products(
         req.category_id.as_ref(),
         req.brand_id.as_ref(),
         search,
+        false,
         false,
     )
     .await?;

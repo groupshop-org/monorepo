@@ -2,8 +2,10 @@ mod api;
 mod config;
 mod legal;
 mod route;
+mod threshold;
+mod wallet;
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use dominator::{append_dom, body, clone, events, html, svg, Dom};
 use futures_signals::signal::{Mutable, SignalExt};
@@ -20,6 +22,7 @@ use crate::{
     api::ApiCtx,
     legal::{privacy_policy, terms_of_service, PageContent},
     route::{Resolved, Route},
+    wallet::render_deposit_panel,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -111,6 +114,7 @@ fn render(route: Route) -> Dom {
             Route::ChooseUsername => render_choose_username(),
             Route::OpenIdFinalize { token } => render_openid_finalize(token),
             Route::Profile => render_profile(),
+            Route::Orders => render_orders(),
             Route::Error(err) => render_error(err),
             Route::NotFound => render_not_found(),
         })
@@ -120,24 +124,55 @@ fn render(route: Route) -> Dom {
 fn render_home() -> Dom {
     let products: Mutable<Option<Vec<ProductSummary>>> = Mutable::new(None);
     let total: Mutable<u32> = Mutable::new(0);
+    // Filter: when on, only deals that already have at least one buyer
+    // are returned. The backend does the filtering via a SQL EXISTS clause
+    // so pagination stays accurate.
+    let with_participants_only: Mutable<bool> = Mutable::new(false);
 
-    spawn_local(clone!(products, total => async move {
-        match ApiCtx::get().client.product_list(&ProductListRequest {
-            page: 1,
-            per_page: 24,
-            category_id: None,
-            brand_id: None,
-            search: None,
-        }).await {
-            Ok(res) => {
-                total.set(res.total);
-                products.set(Some(res.products));
-            }
-            Err(_) => {
-                products.set(Some(Vec::new()));
-            }
+    // Refetch whenever the filter flips OR the polling tick advances.
+    // Polling keeps participant counts fresh on the cards as other buyers
+    // join — see `config::REFRESH_THRESHHOLD_VIEW_MS` for the cadence.
+    let tick: Mutable<u32> = Mutable::new(0);
+    spawn_local(clone!(tick => async move {
+        loop {
+            gloo_timers::future::TimeoutFuture::new(config::REFRESH_THRESHHOLD_VIEW_MS).await;
+            tick.set(tick.get().wrapping_add(1));
         }
     }));
+
+    spawn_local(
+        clone!(products, total, with_participants_only, tick => async move {
+            // Combined signal: re-emits when either the toggle flips or the
+            // polling tick advances. Using `for_each` from futures_signals
+            // keeps the compile-time deps to what's already in the workspace.
+            let signal = futures_signals::map_ref! {
+                let only = with_participants_only.signal(),
+                let _tick = tick.signal() => *only
+            };
+            signal.for_each(move |only| {
+                let products = products.clone();
+                let total = total.clone();
+                async move {
+                    match ApiCtx::get().client.product_list(&ProductListRequest {
+                        page: 1,
+                        per_page: 24,
+                        category_id: None,
+                        brand_id: None,
+                        search: None,
+                        with_participants_only: only,
+                    }).await {
+                        Ok(res) => {
+                            total.set(res.total);
+                            products.set(Some(res.products));
+                        }
+                        Err(_) => {
+                            products.set(Some(Vec::new()));
+                        }
+                    }
+                }
+            }).await;
+        }),
+    );
 
     html!("div", {
         .class(&*chrome::SHELL)
@@ -149,7 +184,20 @@ fn render_home() -> Dom {
             .child(html!("div", {
                 .class(&*chrome::SECTION_HEADER)
                 .children([
-                    section_title("Products"),
+                    // Left side of the section header: title + the
+                    // traction-filter pill, anchored together so the
+                    // filter is the first interactive thing the user
+                    // notices in the products section.
+                    html!("div", {
+                        .style("display", "flex")
+                        .style("align-items", "center")
+                        .style("gap", "0.9rem")
+                        .style("flex-wrap", "wrap")
+                        .children([
+                            section_title("Products"),
+                            traction_filter_toggle(with_participants_only.clone()),
+                        ])
+                    }),
                     html!("span", {
                         .class(&*typography::MICRO_LABEL)
                         .text_signal(total.signal().map(|t| {
@@ -172,11 +220,11 @@ fn render_home() -> Dom {
                             .children([
                                 html!("p", {
                                     .class(&*typography::LEAD_TEXT)
-                                    .text("No products available yet.")
+                                    .text("No products match this filter.")
                                 }),
                                 html!("p", {
                                     .class(&*typography::BODY_MUTED)
-                                    .text("Check back soon — new products are being added regularly.")
+                                    .text("Try turning off the traction filter to see all available deals.")
                                 }),
                             ])
                         }),
@@ -291,37 +339,97 @@ fn product_card(product: ProductSummary) -> Dom {
                     },
                 ])
             }))
+            // Threshold progress lives at the bottom of the card so users
+            // can scan the grid for deals that are close to triggering.
+            .child(html!("div", {
+                .style("margin-top", "0.6rem")
+                .child(threshold::progress(
+                    product.committed_units,
+                    product.minimum_order_quantity,
+                    true,
+                ))
+            }))
+        }))
+    })
+}
+
+/// Checkbox toggle for the "deals gaining traction" filter. Sits next to
+/// the section title so the filter is the first interactive thing in the
+/// products section. The label is colored + bold so it reads as a
+/// first-class affordance, not muted UI chrome.
+fn traction_filter_toggle(state: Mutable<bool>) -> Dom {
+    html!("label", {
+        .style("display", "inline-flex")
+        .style("align-items", "center")
+        .style("gap", "0.5rem")
+        .style("cursor", "pointer")
+        .style("user-select", "none")
+        .child(html!("input" => web_sys::HtmlInputElement, {
+            .attr("type", "checkbox")
+            // Sized up from the browser default so the checkbox is
+            // visually balanced against the (now-bold) label text.
+            .style("inline-size", "1.05rem")
+            .style("block-size", "1.05rem")
+            .style("accent-color", "#16a34a")
+            .style("cursor", "pointer")
+            .prop_signal("checked", state.signal())
+            .event(clone!(state => move |evt: events::Change| {
+                let checked = evt
+                    .target()
+                    .and_then(|target| target.dyn_into::<web_sys::HtmlInputElement>().ok())
+                    .map(|input| input.checked())
+                    .unwrap_or(false);
+                state.set(checked);
+            }))
+        }))
+        // Brand-green bold text when on; same color but a hair lighter
+        // when off so the affordance stays readable in both states.
+        .child(html!("span", {
+            .style("font-size", "0.92rem")
+            .style("font-weight", "700")
+            .style_signal("color", state.signal().map(|on| {
+                if on { "#0c6e5c" } else { "#16a34a" }
+            }))
+            .text("Only deals gaining traction")
         }))
     })
 }
 
 fn how_it_works_section() -> Dom {
+    // Each card is a teaser for the full modal. Clicking anywhere on a
+    // card pops the modal so users get the deep version (Solana, wallet,
+    // escrow flow) rather than only the three short blurbs below.
+    let teaser_card = |title: &'static str, body: &'static str| -> Dom {
+        html!("article", {
+            .class(&*chrome::SIGNAL_CARD)
+            .style("cursor", "pointer")
+            .event(|_: events::Click| {
+                how_it_works_modal_state().set(true);
+            })
+            .children([
+                html!("div", { .class(&*typography::MINI_HEADING) .text(title) }),
+                html!("p", { .class(&*typography::BODY_MUTED) .text(body) }),
+            ])
+        })
+    };
+
     html!("section", {
         .attr("id", "how-it-works")
         .class(&*chrome::SIGNAL_GRID)
         .style("margin-top", "3rem")
         .children([
-            html!("article", {
-                .class(&*chrome::SIGNAL_CARD)
-                .children([
-                    html!("div", { .class(&*typography::MINI_HEADING) .text("Browse products") }),
-                    html!("p", { .class(&*typography::BODY_MUTED) .text("Explore the catalog with real wholesale pricing. No account needed to browse.") }),
-                ])
-            }),
-            html!("article", {
-                .class(&*chrome::SIGNAL_CARD)
-                .children([
-                    html!("div", { .class(&*typography::MINI_HEADING) .text("Commit together") }),
-                    html!("p", { .class(&*typography::BODY_MUTED) .text("Join a group order to meet the minimum order quantity. More buyers means everyone saves.") }),
-                ])
-            }),
-            html!("article", {
-                .class(&*chrome::SIGNAL_CARD)
-                .children([
-                    html!("div", { .class(&*typography::MINI_HEADING) .text("Get wholesale prices") }),
-                    html!("p", { .class(&*typography::BODY_MUTED) .text("Once the group hits the threshold, orders are placed at bulk pricing and shipped to you.") }),
-                ])
-            }),
+            teaser_card(
+                "Browse products",
+                "Explore the catalog with real wholesale pricing. No account needed to browse.",
+            ),
+            teaser_card(
+                "Commit together",
+                "Join a group order to meet the minimum order quantity. More buyers means everyone saves.",
+            ),
+            teaser_card(
+                "Get wholesale prices",
+                "Once the group hits the threshold, orders are placed at bulk pricing and shipped to you.",
+            ),
         ])
     })
 }
@@ -336,19 +444,65 @@ fn section_title(text: &'static str) -> Dom {
 
 fn render_product_detail(id: ProductId) -> Dom {
     let product: Mutable<Option<Result<ProductSummary, String>>> = Mutable::new(None);
+    // Live committed_units total is held in its own Mutable so the
+    // polling loop can update it without forcing the surrounding DOM
+    // (incl. the deposit panel) to re-render. Re-rendering the panel
+    // would reset its local `wallet_address` / `success` state and
+    // bounce the user back to "Phantom not connected" after every poll
+    // tick.
+    let committed_units: Mutable<u64> = Mutable::new(0);
+    // The signed-in user's pending order in the active batch (`None`
+    // when anonymous or no order yet). Polled alongside the product
+    // detail so the cart banner reflects fresh deposits and refunds.
+    let active_order: Mutable<Option<AccountOrderActive>> = Mutable::new(None);
 
-    spawn_local(clone!(product => async move {
-        match ApiCtx::get().client.product_detail(&ProductDetailRequest { id }).await {
-            Ok(res) => product.set(Some(Ok(res.product))),
-            Err(e) => product.set(Some(Err(format!("{e:?}")))),
-        }
-    }));
+    spawn_local(
+        clone!(product, committed_units, active_order, id => async move {
+            loop {
+                match ApiCtx::get()
+                    .client
+                    .product_detail(&ProductDetailRequest { id: id.clone() })
+                    .await
+                {
+                    Ok(res) => {
+                        committed_units.set(res.product.committed_units);
+                        // Only set the product Mutable on the first load —
+                        // subsequent polls update committed_units above
+                        // without churning the DOM.
+                        if product.get_cloned().is_none() {
+                            product.set(Some(Ok(res.product)));
+                        }
+                    }
+                    Err(e) => {
+                        if product.get_cloned().is_none() {
+                            product.set(Some(Err(format!("{e:?}"))));
+                        }
+                    }
+                }
+                // Probe per-user cart state, but only when signed in.
+                // Anonymous users can't have a pending order, so skip the
+                // round-trip entirely.
+                if ApiCtx::get().profile.get_cloned().is_some() {
+                    if let Ok(res) = ApiCtx::get()
+                        .client
+                        .account_order_status(&AccountOrderStatusRequest { product_id: id.clone() })
+                        .await
+                    {
+                        active_order.set(res.active_order);
+                    }
+                } else {
+                    active_order.set(None);
+                }
+                gloo_timers::future::TimeoutFuture::new(config::REFRESH_THRESHHOLD_VIEW_MS).await;
+            }
+        }),
+    );
 
     html!("div", {
         .class(&*chrome::SHELL)
         .child(site_header())
         .child(html!("div", {
-            .child_signal(product.signal_cloned().map(|state| {
+            .child_signal(product.signal_cloned().map(clone!(committed_units, active_order => move |state| {
                 Some(match state {
                     None => html!("div", {
                         .style("padding", "3rem 0")
@@ -369,15 +523,19 @@ fn render_product_detail(id: ProductId) -> Dom {
                             }),
                         ])
                     }),
-                    Some(Ok(p)) => render_product_detail_content(p),
+                    Some(Ok(p)) => render_product_detail_content(p, committed_units.clone(), active_order.clone()),
                 })
-            }))
+            })))
         }))
         .child(site_footer())
     })
 }
 
-fn render_product_detail_content(product: ProductSummary) -> Dom {
+fn render_product_detail_content(
+    product: ProductSummary,
+    committed_units: Mutable<u64>,
+    active_order: Mutable<Option<AccountOrderActive>>,
+) -> Dom {
     let price = format!("${:.2}", product.price_cents as f64 / 100.0);
 
     html!("div", {
@@ -458,71 +616,28 @@ fn render_product_detail_content(product: ProductSummary) -> Dom {
                     ])
                 }))
             }))
-            // Payment card
+            // Threshold progress: anchored above the deposit panel so the
+            // user sees recruitment status before committing. Driven by
+            // a signal so the polling loop can refresh the count without
+            // re-rendering (and resetting) the deposit panel below it.
             .child(html!("div", {
-                .class(&*chrome::CARD)
-                .style("margin-top", "1.5rem")
-                .children([
-                    html!("h3", {
-                        .class(&*typography::MINI_HEADING)
-                        .style("margin-bottom", "1rem")
-                        .text("Join this group order")
-                    }),
-                    // Order summary
-                    html!("div", {
-                        .style("display", "flex")
-                        .style("flex-direction", "column")
-                        .style("gap", "0.75rem")
-                        .children([
-                            summary_row("Unit price", &price),
-                            summary_row("Min. order quantity", &format!("{}", product.minimum_order_quantity)),
-                            summary_row("Your commitment", &format!("{} units", product.minimum_order_quantity)),
-                        ])
-                    }),
-                    // Total
-                    html!("div", {
-                        .style("display", "flex")
-                        .style("justify-content", "space-between")
-                        .style("margin-top", "1rem")
-                        .style("padding-top", "1rem")
-                        .style("border-top", &format!("1px solid {}", groupshop_frontend_shared::theme::color::LINE))
-                        .children([
-                            html!("span", {
-                                .style("font-weight", "700")
-                                .text("Total")
-                            }),
-                            html!("span", {
-                                .style("font-weight", "700")
-                                .style("font-size", "1.15rem")
-                                .text(&format!("${:.2}", product.price_cents as f64 / 100.0 * product.minimum_order_quantity as f64))
-                            }),
-                        ])
-                    }),
-                    // Wallet connect button
-                    html!("button", {
-                        .class(&*chrome::BUTTON)
-                        .class(&*chrome::BUTTON_GRADIENT)
-                        .style("width", "100%")
-                        .style("margin-top", "1.5rem")
-                        .style("min-height", "3rem")
-                        .style("font-size", "1rem")
-                        .text("Connect wallet & pay")
-                        .event(|_: events::Click| {
-                            let _ = web_sys::window()
-                                .unwrap()
-                                .alert_with_message("Wallet connection coming soon!");
-                        })
-                    }),
-                    // Info note
-                    html!("p", {
-                        .class(&*typography::BODY_MUTED)
-                        .style("margin-top", "0.75rem")
-                        .style("font-size", "0.8rem")
-                        .style("text-align", "center")
-                        .text("Payment is held in escrow on Solana until the group order threshold is met.")
-                    }),
-                ])
+                .style("margin-top", "1rem")
+                .child(threshold::progress_signal(
+                    committed_units.signal(),
+                    product.minimum_order_quantity,
+                    false,
+                ))
             }))
+            // Cart-pending banner: shows up above the deposit panel
+            // when the signed-in user already has a non-refunded
+            // participation in this product's active batch. The
+            // `child_signal` evaluates per polling tick so it appears
+            // immediately after a successful deposit and disappears
+            // after a self-refund.
+            .child_signal(active_order.signal_cloned().map(clone!(product => move |maybe_order| {
+                maybe_order.map(|order| cart_pending_banner(&product, &order))
+            })))
+            .child(render_deposit_panel(product.clone(), committed_units.clone()))
             // Back link
             .child(html!("a", {
                 .attr("href", "/")
@@ -534,6 +649,64 @@ fn render_product_detail_content(product: ProductSummary) -> Dom {
                 .style("color", groupshop_frontend_shared::theme::color::BLUE)
                 .text("\u{2190} Back to all products")
             }))
+        }))
+    })
+}
+
+/// Banner shown above the deposit panel when the signed-in user already
+/// has a confirmed, non-refunded participation in the product's active
+/// batch. Surfaces what they committed and links to the My Orders page
+/// where they can manage / withdraw.
+fn cart_pending_banner(product: &ProductSummary, order: &AccountOrderActive) -> Dom {
+    let total_usdc = order.product_amount_base_units as f64 / 1_000_000.0;
+    let line = format!(
+        "You're in this group order — {} unit{} committed (${:.2})",
+        order.quantity,
+        if order.quantity == 1 { "" } else { "s" },
+        total_usdc,
+    );
+    let _ = product; // reserved for future per-product deep-links
+
+    html!("div", {
+        .style("margin-top", "1rem")
+        .style("padding", "0.85rem 1rem")
+        .style("border-radius", "0.85rem")
+        .style("border", "1px solid rgba(22, 163, 74, 0.45)")
+        .style("background", "rgba(22, 163, 74, 0.08)")
+        .style("display", "flex")
+        .style("flex-wrap", "wrap")
+        .style("align-items", "center")
+        .style("justify-content", "space-between")
+        .style("gap", "0.75rem")
+        .child(html!("div", {
+            .child(html!("div", {
+                .style("font-size", "0.78rem")
+                .style("font-weight", "600")
+                .style("text-transform", "uppercase")
+                .style("letter-spacing", "0.06em")
+                .style("color", "#0c6e5c")
+                .text(&format!("Pending order \u{00b7} Batch #{}", order.batch_id))
+            }))
+            .child(html!("div", {
+                .style("margin-top", "0.2rem")
+                .style("font-size", "0.92rem")
+                .style("color", "#102120")
+                .text(&line)
+            }))
+        }))
+        .child(html!("a", {
+            .attr("href", &Route::Orders.link())
+            .style("display", "inline-flex")
+            .style("align-items", "center")
+            .style("padding", "0.5rem 0.95rem")
+            .style("border-radius", "999px")
+            .style("background", "#16a34a")
+            .style("color", "#fff")
+            .style("font-weight", "600")
+            .style("font-size", "0.85rem")
+            .style("text-decoration", "none")
+            .style("white-space", "nowrap")
+            .text("View in Cart")
         }))
     })
 }
@@ -551,23 +724,6 @@ fn detail_row(label: &str, value: &str) -> Dom {
             }),
             html!("span", {
                 .style("font-size", "0.85rem")
-                .text(value)
-            }),
-        ])
-    })
-}
-
-fn summary_row(label: &str, value: &str) -> Dom {
-    html!("div", {
-        .style("display", "flex")
-        .style("justify-content", "space-between")
-        .children([
-            html!("span", {
-                .class(&*typography::BODY_MUTED)
-                .text(label)
-            }),
-            html!("span", {
-                .style("font-weight", "500")
                 .text(value)
             }),
         ])
@@ -1175,6 +1331,288 @@ fn render_profile() -> Dom {
     )
 }
 
+fn render_orders() -> Dom {
+    let orders: Mutable<Option<Vec<AccountOrderSummary>>> = Mutable::new(None);
+
+    // Polling loop: fetch immediately, then refresh on the configured
+    // cadence so the threshold bars and pool status stay live without
+    // user interaction.
+    spawn_local(clone!(orders => async move {
+        loop {
+            match ApiCtx::get().client.account_orders().await {
+                Ok(res) => orders.set(Some(res.orders)),
+                Err(_) => {
+                    if orders.get_cloned().is_none() {
+                        orders.set(Some(Vec::new()));
+                    }
+                }
+            }
+            gloo_timers::future::TimeoutFuture::new(config::REFRESH_THRESHHOLD_VIEW_MS).await;
+        }
+    }));
+
+    html!("div", {
+        .class(&*chrome::SHELL)
+        .child(site_header())
+        .child(html!("section", {
+            .style("margin-top", "2.5rem")
+            .child(html!("div", {
+                .class(&*chrome::SECTION_HEADER)
+                .children([
+                    section_title("My Orders"),
+                ])
+            }))
+            .child_signal(orders.signal_cloned().map(|state| {
+                Some(match state {
+                    None => html!("p", {
+                        .class(&*typography::BODY_MUTED)
+                        .text("Loading your orders...")
+                    }),
+                    Some(orders) if orders.is_empty() => html!("div", {
+                        .class(&*chrome::CARD)
+                        .style("text-align", "center")
+                        .style("padding", "3rem")
+                        .children([
+                            html!("p", {
+                                .class(&*typography::LEAD_TEXT)
+                                .text("No orders yet.")
+                            }),
+                            html!("p", {
+                                .class(&*typography::BODY_MUTED)
+                                .text("Browse the deals on the home page and join one to get started.")
+                            }),
+                        ])
+                    }),
+                    Some(orders) => render_orders_split(orders),
+                })
+            }))
+        }))
+        .child(site_footer())
+    })
+}
+
+/// Splits orders into "Current" (`pipeline_status == Open` and not
+/// refunded) vs "History" (everything else). The on-chain pool's
+/// auto-lock advances the cron-driven pipeline status, so a row moves
+/// from Current → History within a minute of the threshold being met.
+fn render_orders_split(orders: Vec<AccountOrderSummary>) -> Dom {
+    let mut current: Vec<AccountOrderSummary> = Vec::new();
+    let mut history: Vec<AccountOrderSummary> = Vec::new();
+    for o in orders {
+        let active = matches!(o.pipeline_status, BatchPipelineStatus::Open) && !o.refunded;
+        if active {
+            current.push(o);
+        } else {
+            history.push(o);
+        }
+    }
+
+    html!("div", {
+        .child(orders_section("Current orders", &current, true))
+        .child(orders_section("Order history", &history, false))
+    })
+}
+
+fn pipeline_status_label(status: BatchPipelineStatus, refunded: bool) -> &'static str {
+    if refunded {
+        return "Refunded";
+    }
+    match status {
+        BatchPipelineStatus::Open => "Recruiting",
+        BatchPipelineStatus::Locked => "Locked",
+        BatchPipelineStatus::ShippingToDistributor => "Shipping to distributor",
+        BatchPipelineStatus::ShippingIndividually => "Shipping to you",
+        BatchPipelineStatus::Released => "Released",
+        BatchPipelineStatus::Refunding => "Refund mode",
+    }
+}
+
+fn orders_section(title: &str, items: &[AccountOrderSummary], current_section: bool) -> Dom {
+    html!("div", {
+        .style("margin-top", "1.5rem")
+        .child(html!("h3", {
+            .class(&*typography::MINI_HEADING)
+            .style("margin-bottom", "0.75rem")
+            .text(title)
+        }))
+        .apply_if(items.is_empty(), |dom| {
+            dom.child(html!("p", {
+                .class(&*typography::BODY_MUTED)
+                .style("font-size", "0.85rem")
+                .text(if current_section { "No active group deals." } else { "No completed orders yet." })
+            }))
+        })
+        .apply_if(!items.is_empty(), |dom| {
+            let cards: Vec<Dom> = items.iter().cloned().map(|o| order_card(o, current_section)).collect();
+            dom.child(html!("div", {
+                .style("display", "grid")
+                .style("grid-template-columns", "1fr")
+                .style("gap", "0.75rem")
+                .children(cards)
+            }))
+        })
+    })
+}
+
+fn order_card(order: AccountOrderSummary, current_section: bool) -> Dom {
+    let unit_price = format!("${:.2}", order.price_cents as f64 / 100.0);
+    // product_amount_base_units uses USDC decimals (6); divide by 1e6 for
+    // a human-readable USDC figure.
+    let total = format!(
+        "${:.2}",
+        order.product_amount_base_units as f64 / 1_000_000.0
+    );
+    let status_label = pipeline_status_label(order.pipeline_status, order.refunded);
+    let link = Route::Product {
+        id: order.product_id.clone(),
+    }
+    .link();
+    let batch_label = format!("Batch #{}", order.batch_id);
+    // Withdraw is only offered while the deal is still recruiting AND
+    // the user hasn't already refunded — once the on-chain pool locks
+    // (auto at threshold), `SelfRefund` is rejected.
+    let can_withdraw = current_section && !order.refunded;
+    let order_for_summary = order.clone();
+    let order_for_progress = order.clone();
+    let order_for_button = order;
+
+    html!("div", {
+        .class(&*chrome::CARD)
+        .style("display", "grid")
+        .style("grid-template-columns", "auto 1fr auto")
+        .style("gap", "1rem")
+        .style("align-items", "center")
+        .child(html!("a", {
+            .attr("href", &link)
+            .style("text-decoration", "none")
+            .style("color", "inherit")
+            .style("width", "60px")
+            .style("height", "60px")
+            .style("border-radius", "0.5rem")
+            .style("background", "#f3f4f6")
+            .style("overflow", "hidden")
+            .style("display", "block")
+            .apply_if(!order_for_summary.product_image_url.is_empty(), {
+                let url = order_for_summary.product_image_url.clone();
+                let name = order_for_summary.product_name.clone();
+                move |dom| {
+                    dom.child(html!("img", {
+                        .attr("src", &url)
+                        .attr("alt", &name)
+                        .style("width", "100%")
+                        .style("height", "100%")
+                        .style("object-fit", "contain")
+                    }))
+                }
+            })
+        }))
+        .child(html!("div", {
+            .child(html!("a", {
+                .class(&*typography::CARD_TITLE)
+                .attr("href", &link)
+                .style("text-decoration", "none")
+                .style("color", "inherit")
+                .text(&order_for_summary.product_name)
+            }))
+            .child(html!("div", {
+                .style("font-size", "0.78rem")
+                .style("color", "#6b7280")
+                .style("margin-top", "0.2rem")
+                .text(&format!("{batch_label} \u{00b7} Unit {unit_price} \u{00b7} You committed {total}"))
+            }))
+            .apply_if(current_section, move |dom| {
+                dom.child(html!("div", {
+                    .style("margin-top", "0.6rem")
+                    .child(threshold::progress(
+                        order_for_progress.committed_units,
+                        order_for_progress.minimum_order_quantity,
+                        true,
+                    ))
+                }))
+            })
+        }))
+        .child(html!("div", {
+            .style("display", "flex")
+            .style("flex-direction", "column")
+            .style("align-items", "flex-end")
+            .style("gap", "0.5rem")
+            .style("white-space", "nowrap")
+            .child(html!("div", {
+                .style("font-size", "0.72rem")
+                .style("color", if order_for_button.refunded { "#b45309" } else { "#6b7280" })
+                .style("font-weight", if order_for_button.refunded { "600" } else { "500" })
+                .text(status_label)
+            }))
+            .apply_if(can_withdraw, move |dom| {
+                dom.child(withdraw_button(
+                    order_for_button.product_id.clone(),
+                    order_for_button.batch_id,
+                ))
+            })
+        }))
+    })
+}
+
+/// Buyer-initiated refund affordance. Disabled while the request is in
+/// flight; on success the page reloads so the row moves over to History
+/// with the Refunded label.
+fn withdraw_button(product_id: groupshop_backend_shared::prelude::ProductId, batch_id: u32) -> Dom {
+    let working = Mutable::new(false);
+    let error = Mutable::new(None::<String>);
+    html!("div", {
+        .style("display", "flex")
+        .style("flex-direction", "column")
+        .style("align-items", "flex-end")
+        .style("gap", "0.3rem")
+        .child(html!("button", {
+            .attr("type", "button")
+            .style("font-size", "0.78rem")
+            .style("padding", "0.4rem 0.8rem")
+            .style("border-radius", "0.5rem")
+            .style("border", "1px solid #b91c1c")
+            .style("background", "#fff")
+            .style("color", "#b91c1c")
+            .style("cursor", "pointer")
+            .style_signal("opacity", working.signal().map(|busy| {
+                if busy { "0.6".to_string() } else { "1".to_string() }
+            }))
+            .prop_signal("disabled", working.signal())
+            .text_signal(working.signal().map(|busy| {
+                if busy { "Withdrawing\u{2026}".to_string() } else { "Withdraw".to_string() }
+            }))
+            .event(clone!(working, error, product_id => move |_: events::Click| {
+                if working.get() { return; }
+                working.set(true);
+                error.set(None);
+                spawn_local(clone!(working, error, product_id => async move {
+                    match wallet::run_self_refund(product_id, batch_id).await {
+                        Ok(_signature) => {
+                            // Reload so the orders list re-fetches and the
+                            // row moves over to History with the Refunded
+                            // label.
+                            let _ = groupshop_frontend_shared::window().location().reload();
+                        }
+                        Err(err) => {
+                            error.set(Some(err.to_string()));
+                            working.set(false);
+                        }
+                    }
+                }));
+            }))
+        }))
+        .child(html!("p", {
+            .style("font-size", "0.7rem")
+            .style("color", "#b91c1c")
+            .style("max-width", "16rem")
+            .style("text-align", "right")
+            .style_signal("display", error.signal_cloned().map(|v| {
+                if v.is_some() { "block".to_string() } else { "none".to_string() }
+            }))
+            .text_signal(error.signal_cloned().map(|v| v.unwrap_or_default()))
+        }))
+    })
+}
+
 fn render_error(err: Arc<ApiError>) -> Dom {
     auth_shell(
         "Error",
@@ -1195,8 +1633,28 @@ fn render_not_found() -> Dom {
     )
 }
 
+/// Singleton state for the "How It Works" modal. The modal can be triggered
+/// from the nav on any page, but its DOM lives once at the document level so
+/// only one instance is ever active.
+fn how_it_works_modal_state() -> &'static Mutable<bool> {
+    static STATE: OnceLock<Mutable<bool>> = OnceLock::new();
+    STATE.get_or_init(|| Mutable::new(false))
+}
+
 fn site_header() -> Dom {
     let profile = ApiCtx::get().profile.get_cloned();
+    html!("div", {
+        // Wrapping div so we can render the How It Works modal as a sibling
+        // of the actual <header>. The modal is positioned: fixed, so its
+        // physical place in the tree doesn't matter visually.
+        .child(site_header_inner(profile))
+        .child_signal(how_it_works_modal_state().signal().map(|open| {
+            if open { Some(render_how_it_works_modal()) } else { None }
+        }))
+    })
+}
+
+fn site_header_inner(profile: Option<AccountProfile>) -> Dom {
     html!("header", {
         .class(&*chrome::MASTHEAD)
         .child(html!("a", {
@@ -1216,8 +1674,22 @@ fn site_header() -> Dom {
         .child(html!("nav", {
             .class(&*chrome::NAV)
             .children([
-                section_nav_link("/#products", "Products"),
-                section_nav_link("/#how-it-works", "How It Works"),
+                // "How It Works" opens an explainer modal — see
+                // `how_it_works_modal_state()`. Rendered as a button so
+                // the click handler fires without a page navigation; the
+                // <a href> form was a section anchor that no longer
+                // matches the modal-driven content.
+                html!("button", {
+                    .class(&*chrome::NAV_LINK)
+                    .class(&*typography::NAV_LABEL)
+                    .style("background", "transparent")
+                    .style("border", "0")
+                    .style("cursor", "pointer")
+                    .text("How It Works")
+                    .event(|_: events::Click| {
+                        how_it_works_modal_state().set(true);
+                    })
+                }),
             ])
         }))
         .child(html!("div", {
@@ -1254,15 +1726,6 @@ fn site_footer() -> Dom {
                 }),
             ])
         }))
-    })
-}
-
-fn section_nav_link(href: &'static str, text: &'static str) -> Dom {
-    html!("a", {
-        .class(&*chrome::NAV_LINK)
-        .class(&*typography::NAV_LABEL)
-        .attr("href", href)
-        .text(text)
     })
 }
 
@@ -1316,7 +1779,10 @@ fn account_menu(profile: AccountProfile) -> Dom {
             }))
         }))
         .child({
-            let mut items = vec![menu_link_item(Route::Profile, "Account")];
+            let mut items = vec![
+                menu_link_item(Route::Profile, "Account"),
+                menu_link_item(Route::Orders, "My Orders"),
+            ];
             if profile.roles.contains(&UserRole::Admin) {
                 items.push(menu_external_link_item(config::admin_url(), "Admin"));
             }
@@ -1656,6 +2122,154 @@ fn render_legal_modal(kind: LegalModalKind, legal_modal: Mutable<Option<LegalMod
                     })
                 }),
             ])
+        }))
+    })
+}
+
+fn render_how_it_works_modal() -> Dom {
+    let close = || {
+        how_it_works_modal_state().set(false);
+    };
+
+    html!("div", {
+        .style("position", "fixed")
+        .style("inset", "0")
+        .style("z-index", "1000")
+        .style("display", "flex")
+        .style("align-items", "center")
+        .style("justify-content", "center")
+        .style("padding", "1.25rem")
+        .child(html!("div", {
+            .style("position", "absolute")
+            .style("inset", "0")
+            .style("background", "rgba(7, 18, 17, 0.6)")
+            .event(move |_: events::Click| { close(); })
+        }))
+        .child(html!("div", {
+            .style("position", "relative")
+            .style("z-index", "1")
+            .style("display", "grid")
+            .style("grid-template-rows", "auto minmax(0, 1fr)")
+            .style("width", "min(48rem, 100%)")
+            .style("max-height", "min(86vh, 48rem)")
+            .style("overflow", "hidden")
+            .style("padding", "1.4rem 1.5rem 1.2rem 1.5rem")
+            .style("border-radius", "1.35rem")
+            .style("background", "rgba(255,255,255,0.98)")
+            .style("box-shadow", "0 32px 80px rgba(0, 0, 0, 0.22)")
+            .children([
+                html!("div", {
+                    .style("display", "flex")
+                    .style("justify-content", "space-between")
+                    .style("align-items", "flex-start")
+                    .style("gap", "1rem")
+                    .style("padding-bottom", "0.9rem")
+                    .style("border-bottom", "1px solid rgba(13,56,50,0.08)")
+                    .children([
+                        html!("h2", {
+                            .style("margin", "0")
+                            .style("font-size", "clamp(1.5rem, 2vw, 1.85rem)")
+                            .style("color", "#0c1f1c")
+                            .text("How Groupshop works")
+                        }),
+                        html!("button", {
+                            .attr("type", "button")
+                            .style("display", "inline-flex")
+                            .style("align-items", "center")
+                            .style("justify-content", "center")
+                            .style("inline-size", "2.6rem")
+                            .style("block-size", "2.6rem")
+                            .style("border-radius", "999px")
+                            .style("border", "1px solid rgba(13,56,50,0.14)")
+                            .style("background", "rgba(247, 248, 247, 0.96)")
+                            .style("cursor", "pointer")
+                            .child(close_circle_icon())
+                            .event(move |_: events::Click| { close(); })
+                        }),
+                    ])
+                }),
+                html!("div", {
+                    .style("min-height", "0")
+                    .style("overflow", "auto")
+                    .style("padding", "1rem 0.15rem 0.15rem 0.15rem")
+                    .style("color", "#102120")
+                    .style("line-height", "1.6")
+                    .style("font-size", "0.98rem")
+                    .children([
+                        how_it_works_step(
+                            "1",
+                            "Browse open deals",
+                            "The home page lists active group orders. Each card shows the unit price, how many buyers have committed, and how many more are needed before the deal triggers.",
+                        ),
+                        how_it_works_step(
+                            "2",
+                            "Connect a Solana wallet",
+                            "Groupshop uses Solana for escrow. When you click Deposit on a product, you'll be asked to connect your Phantom wallet. We never see your private key — Phantom signs on your behalf in the browser. If you don't have Phantom yet, install it from phantom.app.",
+                        ),
+                        how_it_works_step(
+                            "3",
+                            "Commit funds to escrow",
+                            "Your USDC deposit is held in an on-chain escrow account, not in our database. The transaction is co-signed by Groupshop (the authority wallet) and you, so neither party can move the funds alone. You'll see the on-chain transaction signature when the deposit lands.",
+                        ),
+                        how_it_works_step(
+                            "4",
+                            "Watch the threshold fill",
+                            "Each deal has a minimum number of buyers. Your product card and \"My Orders\" page both show a live progress bar. Counts refresh automatically as new buyers join — no need to refresh.",
+                        ),
+                        how_it_works_step(
+                            "5",
+                            "Deal triggers, you get wholesale pricing",
+                            "Once the threshold is reached, the pool is locked and the order is placed at bulk pricing. If the threshold isn't met, your deposit can be refunded — the on-chain program is the only thing that can move the funds.",
+                        ),
+                        html!("p", {
+                            .style("margin-top", "1.5rem")
+                            .style("padding-top", "1rem")
+                            .style("border-top", "1px solid rgba(13,56,50,0.08)")
+                            .style("font-size", "0.9rem")
+                            .style("color", "#4b5563")
+                            .text("All on-chain activity is on the Solana network you see in the deposit panel (devnet during early access, mainnet at launch). Need help? Reach out via the address in the footer.")
+                        }),
+                    ])
+                }),
+            ])
+        }))
+    })
+}
+
+fn how_it_works_step(num: &str, title: &str, body: &str) -> Dom {
+    html!("div", {
+        .style("display", "grid")
+        .style("grid-template-columns", "2.4rem 1fr")
+        .style("gap", "1rem")
+        .style("padding", "0.9rem 0")
+        .style("border-bottom", "1px solid rgba(13,56,50,0.06)")
+        .child(html!("div", {
+            .style("display", "flex")
+            .style("align-items", "center")
+            .style("justify-content", "center")
+            .style("inline-size", "2.4rem")
+            .style("block-size", "2.4rem")
+            .style("border-radius", "999px")
+            .style("background", "linear-gradient(135deg, #2563eb 0%, #16a34a 100%)")
+            .style("color", "#fff")
+            .style("font-weight", "700")
+            .style("font-size", "0.95rem")
+            .text(num)
+        }))
+        .child(html!("div", {
+            .child(html!("div", {
+                .style("font-weight", "600")
+                .style("color", "#0c1f1c")
+                .style("font-size", "1.05rem")
+                .text(title)
+            }))
+            .child(html!("p", {
+                .style("margin", "0.35rem 0 0 0")
+                .style("color", "#374151")
+                .style("font-size", "0.95rem")
+                .style("line-height", "1.55")
+                .text(body)
+            }))
         }))
     })
 }

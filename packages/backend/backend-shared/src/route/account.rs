@@ -1,13 +1,24 @@
+mod escrow;
+mod orders;
 mod profile;
 mod username;
 
 use crate::{error::ApiError, route::AuthRequirement};
 
+pub use escrow::*;
+pub use orders::*;
 pub use profile::*;
 pub use username::*;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum ApiAccountRoute {
+    EscrowDepositIntent,
+    EscrowDepositBuild,
+    EscrowDepositConfirm,
+    EscrowRefundBuild,
+    EscrowRefundConfirm,
+    Orders,
+    OrderStatus,
     Profile,
     ProfileUpdate,
     UsernameCheck,
@@ -27,6 +38,13 @@ impl ApiAccountRoute {
 impl std::fmt::Display for ApiAccountRoute {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let value = match self {
+            Self::EscrowDepositIntent => "escrow-deposit-intent",
+            Self::EscrowDepositBuild => "escrow-deposit-build",
+            Self::EscrowDepositConfirm => "escrow-deposit-confirm",
+            Self::EscrowRefundBuild => "escrow-refund-build",
+            Self::EscrowRefundConfirm => "escrow-refund-confirm",
+            Self::Orders => "orders",
+            Self::OrderStatus => "order-status",
             Self::Profile => "profile",
             Self::ProfileUpdate => "profile-update",
             Self::UsernameCheck => "username-check",
@@ -53,6 +71,13 @@ impl TryFrom<&http::Uri> for ApiAccountRoute {
         let remaining = parts.collect::<Vec<_>>();
 
         match remaining.as_slice() {
+            ["escrow-deposit-intent"] => Ok(Self::EscrowDepositIntent),
+            ["escrow-deposit-build"] => Ok(Self::EscrowDepositBuild),
+            ["escrow-deposit-confirm"] => Ok(Self::EscrowDepositConfirm),
+            ["escrow-refund-build"] => Ok(Self::EscrowRefundBuild),
+            ["escrow-refund-confirm"] => Ok(Self::EscrowRefundConfirm),
+            ["orders"] => Ok(Self::Orders),
+            ["order-status"] => Ok(Self::OrderStatus),
             ["profile"] => Ok(Self::Profile),
             ["profile-update"] => Ok(Self::ProfileUpdate),
             ["username-check"] => Ok(Self::UsernameCheck),

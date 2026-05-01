@@ -20,6 +20,7 @@ pub enum Route {
     ChooseUsername,
     OpenIdFinalize { token: AuthToken },
     Profile,
+    Orders,
     Error(Arc<ApiError>),
     NotFound,
 }
@@ -74,6 +75,7 @@ impl Route {
                 ))))),
             },
             ["profile"] => Self::Profile,
+            ["orders"] => Self::Orders,
             ["error", error] => match ApiError::decode_str(error) {
                 Ok(error) => Self::Error(Arc::new(error)),
                 Err(err) => Self::Error(Arc::new(ApiError::Unknown(err.to_string()))),
@@ -102,6 +104,7 @@ impl Route {
                 format!("/openid-finalize/{}", token.encode_str().unwrap())
             }
             Self::Profile => "/profile".to_string(),
+            Self::Orders => "/orders".to_string(),
             Self::Error(err) => format!(
                 "/error/{}",
                 err.encode_str().unwrap_or_else(|_| "unknown".to_string())

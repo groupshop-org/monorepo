@@ -4,6 +4,7 @@ use worker::Env;
 pub const REFRESH_TOKEN_GRACE_PERIOD_SECONDS: u64 = 60;
 pub const ONCE_TOKEN_LIFETIME_SECONDS: u64 = 60 * 60;
 pub const SESSION_TOKEN_LIFETIME_MILLIS: u64 = 15 * 60 * 1000;
+pub const ESCROW_WALLET_PROOF_LIFETIME_MILLIS: u64 = 5 * 60 * 1000;
 
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -23,7 +24,17 @@ pub struct Config {
     pub postmark_server_token: Option<String>,
     pub postmark_from_email: Option<String>,
     pub postmark_message_stream: Option<String>,
+    pub solana: SolanaConfig,
     landing_url: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct SolanaConfig {
+    pub network: String,
+    pub rpc_url: String,
+    pub market_program_id: String,
+    pub usdc_mint: String,
+    pub authority_signing_key: [u8; 32],
 }
 
 pub enum LandingRoute {
@@ -108,6 +119,7 @@ impl Config {
             postmark_server_token: optional_env_var(env, "API_POSTMARK_SERVER_TOKEN"),
             postmark_from_email: optional_env_var(env, "POSTMARK_FROM_EMAIL"),
             postmark_message_stream: optional_env_var(env, "POSTMARK_MESSAGE_STREAM"),
+            solana: SolanaConfig::new(env),
             landing_url: required_env_var(env, "URL_LANDING"),
         }
     }
@@ -121,6 +133,21 @@ impl Config {
 
     pub fn landing_url(&self, route: LandingRoute) -> String {
         format!("{}/{}", self.landing_url.trim_end_matches('/'), route)
+    }
+}
+
+impl SolanaConfig {
+    fn new(env: &Env) -> Self {
+        Self {
+            network: required_env_var(env, "SOLANA_NETWORK"),
+            rpc_url: required_env_var(env, "SOLANA_RPC_URL"),
+            market_program_id: required_env_var(env, "SOLANA_MARKET_PROGRAM_ID"),
+            usdc_mint: required_env_var(env, "SOLANA_USDC_MINT"),
+            authority_signing_key: parse_authority_keypair(&required_env_var(
+                env,
+                "SOLANA_AUTHORITY_KEYPAIR_JSON",
+            )),
+        }
     }
 }
 
@@ -160,4 +187,20 @@ fn normalize_env_value(value: String) -> String {
         .trim_matches('\'')
         .trim_matches('"')
         .to_string()
+}
+
+fn parse_authority_keypair(raw: &str) -> [u8; 32] {
+    let bytes: Vec<u8> =
+        serde_json::from_str(raw).expect("SOLANA_AUTHORITY_KEYPAIR_JSON must be a JSON array");
+
+    if bytes.len() < 32 {
+        panic!(
+            "SOLANA_AUTHORITY_KEYPAIR_JSON must contain at least 32 bytes, got {}",
+            bytes.len()
+        );
+    }
+
+    let mut secret = [0u8; 32];
+    secret.copy_from_slice(&bytes[..32]);
+    secret
 }

@@ -252,6 +252,58 @@ impl ApiClient {
         self.api_response::<AccountProfileRoute>().await
     }
 
+    pub async fn account_escrow_deposit_intent(
+        &self,
+        req: &AccountEscrowDepositIntentRequest,
+    ) -> FrontendResult<AccountEscrowDepositIntentResponse> {
+        self.api_request_response::<AccountEscrowDepositIntentRoute>(req)
+            .await
+    }
+
+    pub async fn account_escrow_deposit_build(
+        &self,
+        req: &AccountEscrowDepositBuildRequest,
+    ) -> FrontendResult<AccountEscrowDepositBuildResponse> {
+        self.api_request_response::<AccountEscrowDepositBuildRoute>(req)
+            .await
+    }
+
+    pub async fn account_escrow_deposit_confirm(
+        &self,
+        req: &AccountEscrowDepositConfirmRequest,
+    ) -> FrontendResult<AccountEscrowDepositConfirmResponse> {
+        self.api_request_response::<AccountEscrowDepositConfirmRoute>(req)
+            .await
+    }
+
+    pub async fn account_escrow_refund_build(
+        &self,
+        req: &AccountEscrowRefundBuildRequest,
+    ) -> FrontendResult<AccountEscrowRefundBuildResponse> {
+        self.api_request_response::<AccountEscrowRefundBuildRoute>(req)
+            .await
+    }
+
+    pub async fn account_escrow_refund_confirm(
+        &self,
+        req: &AccountEscrowRefundConfirmRequest,
+    ) -> FrontendResult<AccountEscrowRefundConfirmResponse> {
+        self.api_request_response::<AccountEscrowRefundConfirmRoute>(req)
+            .await
+    }
+
+    pub async fn account_orders(&self) -> FrontendResult<AccountOrdersResponse> {
+        self.api_response::<AccountOrdersRoute>().await
+    }
+
+    pub async fn account_order_status(
+        &self,
+        req: &AccountOrderStatusRequest,
+    ) -> FrontendResult<AccountOrderStatusResponse> {
+        self.api_request_response::<AccountOrderStatusRoute>(req)
+            .await
+    }
+
     pub async fn account_profile_update(
         &self,
         req: &AccountProfileUpdateRequest,

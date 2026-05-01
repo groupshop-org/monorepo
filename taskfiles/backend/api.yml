@@ -10,6 +10,7 @@ tasks:
     desc: "Run the backend API in development mode"
     deps: ["build-dev-once"]
     cmds:
+      - task solana-programs:bootstrap-local
       - task: dev-inner
 
   deploy:
@@ -22,6 +23,10 @@ tasks:
         wrangler deploy
         -c "{{.PATH_CLOUDFLARE_API_WRANGLER_CONFIG}}"
         --env prod
+        --var "SOLANA_NETWORK:{{.SOLANA_NETWORK_ACTIVE}}"
+        --var "SOLANA_RPC_URL:{{.SOLANA_RPC_URL_ACTIVE}}"
+        --var "SOLANA_MARKET_PROGRAM_ID:{{.SOLANA_MARKET_PROGRAM_ID_ACTIVE}}"
+        --var "SOLANA_USDC_MINT:{{.SOLANA_USDC_MINT_ACTIVE}}"
 
   build-dev-once:
     internal: true
@@ -73,3 +78,8 @@ tasks:
         --var "URL_LANDING:{{.URL_LANDING_DEV}}"
         --var "POSTMARK_FROM_EMAIL:{{.API_POSTMARK_FROM_EMAIL}}"
         --var "POSTMARK_MESSAGE_STREAM:{{.API_POSTMARK_MESSAGE_STREAM}}"
+        --var "SOLANA_NETWORK:{{.SOLANA_NETWORK_ACTIVE}}"
+        --var "SOLANA_RPC_URL:{{.SOLANA_RPC_URL_ACTIVE}}"
+        --var "SOLANA_MARKET_PROGRAM_ID:{{.SOLANA_MARKET_PROGRAM_ID_ACTIVE}}"
+        --var "SOLANA_USDC_MINT:{{.SOLANA_USDC_MINT_ACTIVE}}"
+        --var "SOLANA_AUTHORITY_KEYPAIR_JSON:{{.SOLANA_AUTHORITY_KEYPAIR_JSON_LOCAL}}"

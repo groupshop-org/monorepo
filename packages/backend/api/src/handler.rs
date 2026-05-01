@@ -30,6 +30,19 @@ pub async fn handle_request(mut ctx: ApiContext, req: HttpRequest) -> worker::Re
         .unwrap());
     }
 
+    // Internal endpoints — no router enum, no auth gate, just a path
+    // match. Used for cron testing in dev (production hits the
+    // scheduled-event handler in lib.rs instead). Gated by the local
+    // wrangler config; we don't expose this in production via routing.
+    if req.uri().path() == "/internal/cron-tick" {
+        return match crate::cron::run(&mut ctx).await {
+            Ok(report) => Ok(json_response(&report, None).await.unwrap()),
+            Err(err) => Ok(json_response(&err, Some(StatusCode::INTERNAL_SERVER_ERROR))
+                .await
+                .unwrap()),
+        };
+    }
+
     let route: ApiRoute = match req.uri().try_into() {
         Ok(route) => route,
         Err(err) => {
@@ -226,6 +239,39 @@ async fn handle_route(
             ApiProductRoute::Brands => Ok(product::handle_product_brands(ctx, req).await?.boxed()),
         },
         ApiRoute::Account(account_route) => match account_route {
+            ApiAccountRoute::EscrowDepositIntent => {
+                Ok(account::escrow::handle_escrow_deposit_intent(ctx, req)
+                    .await?
+                    .boxed())
+            }
+            ApiAccountRoute::EscrowDepositBuild => {
+                Ok(account::escrow::handle_escrow_deposit_build(ctx, req)
+                    .await?
+                    .boxed())
+            }
+            ApiAccountRoute::EscrowDepositConfirm => {
+                Ok(account::escrow::handle_escrow_deposit_confirm(ctx, req)
+                    .await?
+                    .boxed())
+            }
+            ApiAccountRoute::EscrowRefundBuild => {
+                Ok(account::escrow::handle_escrow_refund_build(ctx, req)
+                    .await?
+                    .boxed())
+            }
+            ApiAccountRoute::EscrowRefundConfirm => {
+                Ok(account::escrow::handle_escrow_refund_confirm(ctx, req)
+                    .await?
+                    .boxed())
+            }
+            ApiAccountRoute::Orders => Ok(account::orders::handle_account_orders(ctx, req)
+                .await?
+                .boxed()),
+            ApiAccountRoute::OrderStatus => {
+                Ok(account::orders::handle_account_order_status(ctx, req)
+                    .await?
+                    .boxed())
+            }
             ApiAccountRoute::Profile => {
                 Ok(account::profile::handle_profile(ctx, req).await?.boxed())
             }

@@ -23,6 +23,9 @@ vars:
   PATH_TARGET_DEPLOY: '{{joinPath .PATH_REPO_ROOT "target" "deploy"}}'
   PATH_DEPLOYMENTS_LOCAL: '{{joinPath .PATH_REPO_ROOT ".deployments" "local"}}'
   PATH_DEPLOYMENT_MARKET_PROGRAM_LOCAL: '{{joinPath .PATH_DEPLOYMENTS_LOCAL "market-program.json"}}'
+  PATH_DEPLOYMENT_USDC_MINT_LOCAL: '{{joinPath .PATH_DEPLOYMENTS_LOCAL "usdc-mint.json"}}'
+  PATH_DEPLOYMENT_USDC_MINT_KEYPAIR_LOCAL: '{{joinPath .PATH_DEPLOYMENTS_LOCAL "usdc-mint-keypair.json"}}'
+  PATH_LANDING_SOLANA_DEPLOYMENTS: '{{joinPath .PATH_PACKAGE_LANDING "assets" "solana-deployments.json"}}'
   PATH_SUPPLIER_DATA: '{{joinPath .PATH_REPO_ROOT ".." "suppliers-data"}}'
 
   # MEDIA
@@ -63,3 +66,52 @@ vars:
   API_OPENID_GOOGLE_REDIRECT_URI_PROD: "{{.URL_API_PROD}}/auth/openid-access-token-hook/google"
   API_POSTMARK_FROM_EMAIL: "notifications@groupshop.org"
   API_POSTMARK_MESSAGE_STREAM: "outbound"
+
+  # SOLANA TARGET SELECTION
+  SOLANA_NETWORK_ACTIVE:
+    sh: printf "%s" "${SOLANA_NETWORK:-local}"
+  SOLANA_RPC_URL_DEVNET:
+    sh: printf "%s" "${SOLANA_RPC_URL_DEVNET:-https://api.devnet.solana.com}"
+  SOLANA_MARKET_PROGRAM_ID_DEVNET:
+    sh: printf "%s" "${SOLANA_MARKET_PROGRAM_ID_DEVNET:-}"
+  SOLANA_USDC_MINT_DEVNET:
+    sh: printf "%s" "${SOLANA_USDC_MINT_DEVNET:-}"
+  SOLANA_WALLET_DEV:
+    sh: printf "%s" "${SOLANA_WALLET_DEV:-}"
+  SOLANA_AUTHORITY_KEYPAIR_JSON_LOCAL:
+    sh: cat "{{.HOME}}/.config/solana/id.json"
+  SOLANA_MARKET_PROGRAM_ID_LOCAL:
+    sh: |
+      if [ -f "{{.PATH_DEPLOYMENT_MARKET_PROGRAM_LOCAL}}" ]; then
+        jq -r '.programId // ""' "{{.PATH_DEPLOYMENT_MARKET_PROGRAM_LOCAL}}"
+      else
+        printf ""
+      fi
+  SOLANA_USDC_MINT_LOCAL:
+    sh: |
+      if [ -f "{{.PATH_DEPLOYMENT_USDC_MINT_LOCAL}}" ]; then
+        jq -r '.mint // ""' "{{.PATH_DEPLOYMENT_USDC_MINT_LOCAL}}"
+      else
+        printf ""
+      fi
+  SOLANA_RPC_URL_ACTIVE:
+    sh: |
+      if [ "{{.SOLANA_NETWORK_ACTIVE}}" = "local" ]; then
+        printf "%s" "{{.URL_SOLANA_VALIDATOR_RPC_DEV}}"
+      else
+        printf "%s" "{{.SOLANA_RPC_URL_DEVNET}}"
+      fi
+  SOLANA_MARKET_PROGRAM_ID_ACTIVE:
+    sh: |
+      if [ "{{.SOLANA_NETWORK_ACTIVE}}" = "local" ]; then
+        printf "%s" "{{.SOLANA_MARKET_PROGRAM_ID_LOCAL}}"
+      else
+        printf "%s" "{{.SOLANA_MARKET_PROGRAM_ID_DEVNET}}"
+      fi
+  SOLANA_USDC_MINT_ACTIVE:
+    sh: |
+      if [ "{{.SOLANA_NETWORK_ACTIVE}}" = "local" ]; then
+        printf "%s" "{{.SOLANA_USDC_MINT_LOCAL}}"
+      else
+        printf "%s" "{{.SOLANA_USDC_MINT_DEVNET}}"
+      fi

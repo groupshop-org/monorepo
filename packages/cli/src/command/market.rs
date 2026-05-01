@@ -19,7 +19,7 @@ use solana_sdk::{
 
 // System program id. Hardcoded rather than re-exported from a moving target in solana-sdk.
 fn system_program_id() -> Pubkey {
-    Pubkey::new_from_array([0u8; 32])
+    Pubkey::from_str("11111111111111111111111111111111").expect("system program id should parse")
 }
 
 use crate::context::CliCtx;
@@ -50,6 +50,10 @@ pub enum MarketCmd {
         /// Optional: compute the participation PDA for this UserId too.
         #[arg(long)]
         user_id: Option<String>,
+        /// Batch index — defaults to 0 (the very first batch of a
+        /// product). Each subsequent group-buy round bumps the batch_id.
+        #[arg(long, default_value_t = 0)]
+        batch_id: u32,
     },
 
     /// Initialize a new product pool. Signed by the backend authority.
@@ -63,6 +67,12 @@ pub enum MarketCmd {
         /// Authority keypair (defaults to the CLI's --keypair).
         #[arg(long)]
         authority_keypair: Option<PathBuf>,
+        #[arg(long, default_value_t = 0)]
+        batch_id: u32,
+        /// Group-deal threshold; the on-chain program auto-locks the pool
+        /// once this many distinct participants have deposited.
+        #[arg(long)]
+        threshold: u32,
     },
 
     /// Deposit from a buyer's USDC account into the product pool. Signed by
@@ -86,6 +96,13 @@ pub enum MarketCmd {
         /// Authority keypair (defaults to the CLI's --keypair).
         #[arg(long)]
         authority_keypair: Option<PathBuf>,
+        #[arg(long, default_value_t = 0)]
+        batch_id: u32,
+        /// Number of product units this deposit commits to. Must be >= 1.
+        /// The on-chain program adds this to `Pool.total_quantity` and
+        /// auto-locks when the running total hits the pool's threshold.
+        #[arg(long)]
+        quantity: u64,
     },
 
     /// Lock the pool — no more deposits accepted.
@@ -96,6 +113,8 @@ pub enum MarketCmd {
         product_slug: String,
         #[arg(long)]
         authority_keypair: Option<PathBuf>,
+        #[arg(long, default_value_t = 0)]
+        batch_id: u32,
     },
 
     /// Release the entire vault balance to a destination USDC ATA.
@@ -108,6 +127,8 @@ pub enum MarketCmd {
         destination_ata: String,
         #[arg(long)]
         authority_keypair: Option<PathBuf>,
+        #[arg(long, default_value_t = 0)]
+        batch_id: u32,
     },
 
     /// Flip the pool into Refunding state. Backend must re-seed the vault
@@ -119,6 +140,8 @@ pub enum MarketCmd {
         product_slug: String,
         #[arg(long)]
         authority_keypair: Option<PathBuf>,
+        #[arg(long, default_value_t = 0)]
+        batch_id: u32,
     },
 
     /// Refund a participant in the currently-Refunding pool.
@@ -134,6 +157,8 @@ pub enum MarketCmd {
         destination_ata: String,
         #[arg(long)]
         authority_keypair: Option<PathBuf>,
+        #[arg(long, default_value_t = 0)]
+        batch_id: u32,
     },
 }
 
@@ -143,18 +168,23 @@ pub fn run(ctx: &mut CliCtx, cmd: MarketCmd) -> Result<()> {
             program_id,
             product_slug,
             user_id,
-        } => run_pdas(&program_id, &product_slug, user_id.as_deref()),
+            batch_id,
+        } => run_pdas(&program_id, &product_slug, user_id.as_deref(), batch_id),
         MarketCmd::InitializePool {
             program_id,
             product_slug,
             usdc_mint,
             authority_keypair,
+            batch_id,
+            threshold,
         } => run_initialize_pool(
             ctx,
             &program_id,
             &product_slug,
             &usdc_mint,
             authority_keypair,
+            batch_id,
+            threshold,
         ),
         MarketCmd::Deposit {
             program_id,
@@ -165,6 +195,8 @@ pub fn run(ctx: &mut CliCtx, cmd: MarketCmd) -> Result<()> {
             product_amount,
             shipping_amount,
             authority_keypair,
+            batch_id,
+            quantity,
         } => run_deposit(
             ctx,
             &program_id,
@@ -175,35 +207,42 @@ pub fn run(ctx: &mut CliCtx, cmd: MarketCmd) -> Result<()> {
             product_amount,
             shipping_amount,
             authority_keypair,
+            batch_id,
+            quantity,
         ),
         MarketCmd::LockPool {
             program_id,
             product_slug,
             authority_keypair,
-        } => run_lock_pool(ctx, &program_id, &product_slug, authority_keypair),
+            batch_id,
+        } => run_lock_pool(ctx, &program_id, &product_slug, authority_keypair, batch_id),
         MarketCmd::Release {
             program_id,
             product_slug,
             destination_ata,
             authority_keypair,
+            batch_id,
         } => run_release(
             ctx,
             &program_id,
             &product_slug,
             &destination_ata,
             authority_keypair,
+            batch_id,
         ),
         MarketCmd::EnterRefundMode {
             program_id,
             product_slug,
             authority_keypair,
-        } => run_enter_refund(ctx, &program_id, &product_slug, authority_keypair),
+            batch_id,
+        } => run_enter_refund(ctx, &program_id, &product_slug, authority_keypair, batch_id),
         MarketCmd::ClaimRefund {
             program_id,
             product_slug,
             user_id,
             destination_ata,
             authority_keypair,
+            batch_id,
         } => run_claim_refund(
             ctx,
             &program_id,
@@ -211,6 +250,7 @@ pub fn run(ctx: &mut CliCtx, cmd: MarketCmd) -> Result<()> {
             &user_id,
             &destination_ata,
             authority_keypair,
+            batch_id,
         ),
     }
 }
@@ -219,46 +259,58 @@ pub fn run(ctx: &mut CliCtx, cmd: MarketCmd) -> Result<()> {
 // Commands
 // ---------------------------------------------------------------------------
 
-fn run_pdas(program_id_str: &str, product_slug: &str, user_id_str: Option<&str>) -> Result<()> {
+fn run_pdas(
+    program_id_str: &str,
+    product_slug: &str,
+    user_id_str: Option<&str>,
+    batch_id: u32,
+) -> Result<()> {
     let program_id = Pubkey::from_str(program_id_str).context("invalid program ID")?;
     let hash = product_hash_from_slug(product_slug)?;
-    let (pool, pool_bump) = derive_pool(&program_id, &hash);
-    let (vault, vault_bump) = derive_vault(&program_id, &hash);
+    let (pool, pool_bump) = derive_pool(&program_id, &hash, batch_id);
+    let (vault, vault_bump) = derive_vault(&program_id, &hash, batch_id);
     println!("product_slug     = {product_slug}");
     println!("product_hash     = {}", hex32(&hash));
+    println!("batch_id         = {batch_id}");
     println!("pool             = {pool}  (bump {pool_bump})");
     println!("vault            = {vault}  (bump {vault_bump})");
     if let Some(user_id_str) = user_id_str {
         let user_id = UserId::from_encoded_str(user_id_str)
             .map_err(|e| anyhow::anyhow!("invalid --user-id: {e}"))?;
-        let (participation, bump) = derive_participation(&program_id, &hash, &user_id.inner());
+        let (participation, bump) =
+            derive_participation(&program_id, &hash, batch_id, &user_id.inner());
         println!("user_id          = {user_id}");
         println!("participation    = {participation}  (bump {bump})");
     }
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_initialize_pool(
     ctx: &mut CliCtx,
     program_id_str: &str,
     product_slug: &str,
     usdc_mint_str: &str,
     authority_keypair: Option<PathBuf>,
+    batch_id: u32,
+    threshold: u32,
 ) -> Result<()> {
     let program_id = Pubkey::from_str(program_id_str).context("invalid program ID")?;
     let usdc_mint = Pubkey::from_str(usdc_mint_str).context("invalid usdc mint")?;
     let token_program = token_program_id()?;
     let hash = product_hash_from_slug(product_slug)?;
-    let (pool, pool_bump) = derive_pool(&program_id, &hash);
-    let (vault, vault_bump) = derive_vault(&program_id, &hash);
+    let (pool, pool_bump) = derive_pool(&program_id, &hash, batch_id);
+    let (vault, vault_bump) = derive_vault(&program_id, &hash, batch_id);
 
     let authority = load_authority(ctx, authority_keypair)?;
 
-    let mut data = Vec::with_capacity(1 + 32 + 1 + 1);
+    let mut data = Vec::with_capacity(1 + 32 + 1 + 1 + 4 + 4);
     data.push(TAG_INITIALIZE_POOL);
     data.extend_from_slice(&hash);
     data.push(pool_bump);
     data.push(vault_bump);
+    data.extend_from_slice(&batch_id.to_le_bytes());
+    data.extend_from_slice(&threshold.to_le_bytes());
 
     let accounts = vec![
         AccountMeta::new(authority.pubkey(), true),
@@ -291,6 +343,8 @@ fn run_deposit(
     product_amount: u64,
     shipping_amount: u64,
     authority_keypair: Option<PathBuf>,
+    batch_id: u32,
+    quantity: u64,
 ) -> Result<()> {
     let program_id = Pubkey::from_str(program_id_str).context("invalid program ID")?;
     let buyer_ata = Pubkey::from_str(buyer_ata_str).context("invalid buyer ata")?;
@@ -301,9 +355,10 @@ fn run_deposit(
         .map_err(|e| anyhow::anyhow!("invalid --user-id: {e}"))?;
     let user_id_bytes = user_id.inner();
 
-    let (pool, _) = derive_pool(&program_id, &hash);
-    let (vault, _) = derive_vault(&program_id, &hash);
-    let (participation, part_bump) = derive_participation(&program_id, &hash, &user_id_bytes);
+    let (pool, _) = derive_pool(&program_id, &hash, batch_id);
+    let (vault, _) = derive_vault(&program_id, &hash, batch_id);
+    let (participation, part_bump) =
+        derive_participation(&program_id, &hash, batch_id, &user_id_bytes);
 
     let buyer = read_keypair_file(buyer_keypair_path)
         .map_err(|e| anyhow::anyhow!("failed to read buyer keypair {buyer_keypair_path:?}: {e}"))?;
@@ -311,12 +366,13 @@ fn run_deposit(
 
     let usdc_mint = fetch_mint_from_pool(ctx, &pool)?;
 
-    let mut data = Vec::with_capacity(1 + 32 + 1 + 8 + 8);
+    let mut data = Vec::with_capacity(1 + 32 + 1 + 8 + 8 + 8);
     data.push(TAG_DEPOSIT);
     data.extend_from_slice(&user_id_bytes);
     data.push(part_bump);
     data.extend_from_slice(&product_amount.to_le_bytes());
     data.extend_from_slice(&shipping_amount.to_le_bytes());
+    data.extend_from_slice(&quantity.to_le_bytes());
 
     let accounts = vec![
         AccountMeta::new(buyer.pubkey(), true),
@@ -345,10 +401,11 @@ fn run_lock_pool(
     program_id_str: &str,
     product_slug: &str,
     authority_keypair: Option<PathBuf>,
+    batch_id: u32,
 ) -> Result<()> {
     let program_id = Pubkey::from_str(program_id_str).context("invalid program ID")?;
     let hash = product_hash_from_slug(product_slug)?;
-    let (pool, _) = derive_pool(&program_id, &hash);
+    let (pool, _) = derive_pool(&program_id, &hash, batch_id);
     let authority = load_authority(ctx, authority_keypair)?;
 
     let ix = Instruction {
@@ -362,19 +419,21 @@ fn run_lock_pool(
     send_tx(ctx, &[ix], &[&authority], &authority.pubkey())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_release(
     ctx: &mut CliCtx,
     program_id_str: &str,
     product_slug: &str,
     destination_ata_str: &str,
     authority_keypair: Option<PathBuf>,
+    batch_id: u32,
 ) -> Result<()> {
     let program_id = Pubkey::from_str(program_id_str).context("invalid program ID")?;
     let destination = Pubkey::from_str(destination_ata_str).context("invalid destination ata")?;
     let token_program = token_program_id()?;
     let hash = product_hash_from_slug(product_slug)?;
-    let (pool, _) = derive_pool(&program_id, &hash);
-    let (vault, _) = derive_vault(&program_id, &hash);
+    let (pool, _) = derive_pool(&program_id, &hash, batch_id);
+    let (vault, _) = derive_vault(&program_id, &hash, batch_id);
     let authority = load_authority(ctx, authority_keypair)?;
 
     let ix = Instruction {
@@ -396,11 +455,12 @@ fn run_enter_refund(
     program_id_str: &str,
     product_slug: &str,
     authority_keypair: Option<PathBuf>,
+    batch_id: u32,
 ) -> Result<()> {
     let program_id = Pubkey::from_str(program_id_str).context("invalid program ID")?;
     let hash = product_hash_from_slug(product_slug)?;
-    let (pool, _) = derive_pool(&program_id, &hash);
-    let (vault, _) = derive_vault(&program_id, &hash);
+    let (pool, _) = derive_pool(&program_id, &hash, batch_id);
+    let (vault, _) = derive_vault(&program_id, &hash, batch_id);
     let authority = load_authority(ctx, authority_keypair)?;
 
     let ix = Instruction {
@@ -415,6 +475,7 @@ fn run_enter_refund(
     send_tx(ctx, &[ix], &[&authority], &authority.pubkey())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_claim_refund(
     ctx: &mut CliCtx,
     program_id_str: &str,
@@ -422,6 +483,7 @@ fn run_claim_refund(
     user_id_str: &str,
     destination_ata_str: &str,
     authority_keypair: Option<PathBuf>,
+    batch_id: u32,
 ) -> Result<()> {
     let program_id = Pubkey::from_str(program_id_str).context("invalid program ID")?;
     let destination = Pubkey::from_str(destination_ata_str).context("invalid destination ata")?;
@@ -430,9 +492,9 @@ fn run_claim_refund(
     let hash = product_hash_from_slug(product_slug)?;
     let user_id = UserId::from_encoded_str(user_id_str)
         .map_err(|e| anyhow::anyhow!("invalid --user-id: {e}"))?;
-    let (pool, _) = derive_pool(&program_id, &hash);
-    let (vault, _) = derive_vault(&program_id, &hash);
-    let (participation, _) = derive_participation(&program_id, &hash, &user_id.inner());
+    let (pool, _) = derive_pool(&program_id, &hash, batch_id);
+    let (vault, _) = derive_vault(&program_id, &hash, batch_id);
+    let (participation, _) = derive_participation(&program_id, &hash, batch_id, &user_id.inner());
 
     let authority = load_authority(ctx, authority_keypair)?;
 
@@ -465,20 +527,27 @@ fn product_hash_from_slug(slug: &str) -> Result<[u8; 32]> {
     Ok(product_id.hash().inner())
 }
 
-fn derive_pool(program_id: &Pubkey, product_hash: &[u8; 32]) -> (Pubkey, u8) {
-    Pubkey::find_program_address(&[POOL_SEED, product_hash], program_id)
+fn derive_pool(program_id: &Pubkey, product_hash: &[u8; 32], batch_id: u32) -> (Pubkey, u8) {
+    let batch_id_bytes = batch_id.to_le_bytes();
+    Pubkey::find_program_address(&[POOL_SEED, product_hash, &batch_id_bytes], program_id)
 }
 
-fn derive_vault(program_id: &Pubkey, product_hash: &[u8; 32]) -> (Pubkey, u8) {
-    Pubkey::find_program_address(&[VAULT_SEED, product_hash], program_id)
+fn derive_vault(program_id: &Pubkey, product_hash: &[u8; 32], batch_id: u32) -> (Pubkey, u8) {
+    let batch_id_bytes = batch_id.to_le_bytes();
+    Pubkey::find_program_address(&[VAULT_SEED, product_hash, &batch_id_bytes], program_id)
 }
 
 fn derive_participation(
     program_id: &Pubkey,
     product_hash: &[u8; 32],
+    batch_id: u32,
     user_id: &[u8; 32],
 ) -> (Pubkey, u8) {
-    Pubkey::find_program_address(&[PARTICIPATION_SEED, product_hash, user_id], program_id)
+    let batch_id_bytes = batch_id.to_le_bytes();
+    Pubkey::find_program_address(
+        &[PARTICIPATION_SEED, product_hash, &batch_id_bytes, user_id],
+        program_id,
+    )
 }
 
 fn token_program_id() -> Result<Pubkey> {

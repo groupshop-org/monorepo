@@ -9,8 +9,60 @@ vars:
   PATH_TRUNK_DIST_LANDING: '{{joinPath .PATH_TRUNK_DIST "landing"}}'
   PATH_PACKAGE_PROGRAM_MARKET: '{{joinPath .PATH_PACKAGES_SOLANA_PROGRAMS "market"}}'
   PATH_ARTIFACT_PROGRAM_MARKET: '{{joinPath .PATH_TARGET_DEPLOY "groupshop_contract_market.so"}}'
+  PATH_SOLANA_BIN: "{{.HOME}}/.local/share/solana/install/active_release/bin"
+  PATH_DEFAULT_KEYPAIR: "{{.HOME}}/.config/solana/id.json"
 
 tasks:
+  bootstrap-local:
+    desc: "Deploy the market program, create the local USDC mint, and write the frontend Solana manifest"
+    cmds:
+      - task: wait-local-validator
+      - task: fund-authority
+      - task: build-dev
+      - task: deploy-local
+      - task: ensure-local-usdc-mint
+      - task: write-frontend-config
+      - task: fund-configured-wallet
+
+  fund-authority:
+    desc: "Ensure the backend authority keypair has SOL for fee-paying (pool init, etc.)"
+    internal: true
+    cmds:
+      - |
+        set -euo pipefail
+        export PATH="{{.PATH_SOLANA_BIN}}:$PATH"
+        AUTHORITY=$(solana-keygen pubkey "{{.PATH_DEFAULT_KEYPAIR}}")
+        RPC_URL="{{.URL_SOLANA_VALIDATOR_RPC_DEV}}"
+        TARGET_SOL="${TARGET_AUTHORITY_SOL:-100}"
+        # `solana-test-validator` pre-funds the default keypair so this is
+        # usually a no-op locally — but the explicit airdrop makes the
+        # invariant obvious and is the same shape we'd use on devnet
+        # (where the authority starts at 0 SOL). The `|| true` lets us
+        # tolerate the rare faucet rate-limit on a fresh validator.
+        BAL=$(solana --url "$RPC_URL" balance "$AUTHORITY" 2>/dev/null | awk '{print $1}')
+        BAL="${BAL:-0}"
+        NEEDED=$(awk -v b="$BAL" -v t="$TARGET_SOL" 'BEGIN { d = t - b; if (d < 0) d = 0; printf "%.0f", d }')
+        if [ "$NEEDED" != "0" ]; then
+          solana --url "$RPC_URL" airdrop "$NEEDED" "$AUTHORITY" >/dev/null 2>&1 || true
+        fi
+        echo "authority    = $AUTHORITY"
+        echo "authority_sol_target = $TARGET_SOL"
+
+  wait-local-validator:
+    internal: true
+    cmds:
+      - |
+        for _ in $(seq 1 60); do
+          if curl -s -X POST -H 'Content-Type: application/json' \
+            -d '{"jsonrpc":"2.0","id":1,"method":"getHealth"}' \
+            "{{.URL_SOLANA_VALIDATOR_RPC_DEV}}" >/dev/null 2>&1; then
+            exit 0
+          fi
+          sleep 1
+        done
+        echo "Local Solana validator did not become ready in time" >&2
+        exit 1
+
   dev:
     desc: "Run the solana programs in development mode"
     cmds:
@@ -26,6 +78,24 @@ tasks:
         --url {{.URL_SOLANA_VALIDATOR_RPC_DEV}}
         "{{.PATH_ARTIFACT_PROGRAM_MARKET}}"
         > "{{.PATH_DEPLOYMENT_MARKET_PROGRAM_LOCAL}}"
+
+  ensure-local-usdc-mint:
+    internal: true
+    cmds:
+      - mkdir -p "{{.PATH_DEPLOYMENTS_LOCAL}}"
+      - |
+        KEYPAIR="{{.HOME}}/.config/solana/id.json"
+        MINT_KEYPAIR="{{.PATH_DEPLOYMENT_USDC_MINT_KEYPAIR_LOCAL}}"
+        RPC_URL="{{.URL_SOLANA_VALIDATOR_RPC_DEV}}"
+        if [ ! -f "$MINT_KEYPAIR" ]; then
+          solana-keygen new --no-bip39-passphrase --silent --outfile "$MINT_KEYPAIR" >/dev/null
+        fi
+        MINT=$(solana-keygen pubkey "$MINT_KEYPAIR")
+        if ! spl-token --url "$RPC_URL" display "$MINT" >/dev/null 2>&1; then
+          spl-token --url "$RPC_URL" --fee-payer "$KEYPAIR" \
+            create-token --decimals 6 --mint-authority "$KEYPAIR" -- "$MINT_KEYPAIR" >/dev/null
+        fi
+        jq -n --arg mint "$MINT" '{"mint":$mint}' > "{{.PATH_DEPLOYMENT_USDC_MINT_LOCAL}}"
 
   build-release:
     desc: "Build the solana programs"
@@ -44,3 +114,101 @@ tasks:
     desc: "Get the program ID of the locally deployed market program"
     cmds:
       - jq -r .programId "{{.PATH_DEPLOYMENT_MARKET_PROGRAM_LOCAL}}"
+
+  write-frontend-config:
+    desc: "Write the landing frontend Solana deployment manifest"
+    cmds:
+      - mkdir -p "$(dirname "{{.PATH_LANDING_SOLANA_DEPLOYMENTS}}")"
+      - |
+        jq -n \
+          --arg local_network "local" \
+          --arg local_rpc "{{.URL_SOLANA_VALIDATOR_RPC_DEV}}" \
+          --arg local_program "{{.SOLANA_MARKET_PROGRAM_ID_LOCAL}}" \
+          --arg local_mint "{{.SOLANA_USDC_MINT_LOCAL}}" \
+          --arg devnet_network "devnet" \
+          --arg devnet_rpc "{{.SOLANA_RPC_URL_DEVNET}}" \
+          --arg devnet_program "{{.SOLANA_MARKET_PROGRAM_ID_DEVNET}}" \
+          --arg devnet_mint "{{.SOLANA_USDC_MINT_DEVNET}}" \
+          '{
+            networks: {
+              local: {
+                network: $local_network,
+                rpc_url: $local_rpc,
+                market_program_id: $local_program,
+                usdc_mint: $local_mint
+              },
+              devnet: {
+                network: $devnet_network,
+                rpc_url: $devnet_rpc,
+                market_program_id: $devnet_program,
+                usdc_mint: $devnet_mint
+              }
+            }
+          }' > "{{.PATH_LANDING_SOLANA_DEPLOYMENTS}}"
+
+  fund-configured-wallet:
+    internal: true
+    cmds:
+      - |
+        set -euo pipefail
+        WALLET="{{.SOLANA_WALLET_DEV}}"
+        if [ -z "$WALLET" ]; then
+          echo "SOLANA_WALLET_DEV is empty; skipping local wallet funding" >&2
+          exit 0
+        fi
+        task solana-programs:fund-local-wallet -- "$WALLET"
+
+  fund-local-wallet:
+    desc: "Ensure a wallet has local SOL and test USDC: task solana-programs:fund-local-wallet -- <WALLET_ADDRESS>"
+    cmds:
+      - |
+        set -euo pipefail
+        export PATH="{{.PATH_SOLANA_BIN}}:$PATH"
+
+        WALLET="{{.CLI_ARGS}}"
+        RPC_URL="{{.URL_SOLANA_VALIDATOR_RPC_DEV}}"
+        KEYPAIR="{{.PATH_DEFAULT_KEYPAIR}}"
+        MINT="{{.SOLANA_USDC_MINT_LOCAL}}"
+        TARGET_SOL="${TARGET_SOL:-5}"
+        TARGET_USDC="${TARGET_USDC:-1000}"
+
+        if [ -z "$WALLET" ]; then
+          echo "usage: task solana-programs:fund-local-wallet -- <WALLET_ADDRESS>" >&2
+          exit 1
+        fi
+
+        if [ -z "$MINT" ]; then
+          echo "local USDC mint is not available yet; run \`task dev\` or \`task solana-programs:bootstrap-local\` first" >&2
+          exit 1
+        fi
+
+        solana --url "$RPC_URL" airdrop "$TARGET_SOL" "$WALLET" >/dev/null 2>&1 || true
+
+        ATA=$(spl-token --url "$RPC_URL" address --token "$MINT" --owner "$WALLET" --verbose \
+          | awk '/Associated token address/ {print $4}')
+
+        if ! spl-token --url "$RPC_URL" account-info --address "$ATA" >/dev/null 2>&1; then
+          spl-token --url "$RPC_URL" --fee-payer "$KEYPAIR" create-account --owner "$WALLET" "$MINT" >/dev/null
+        fi
+
+        CURRENT_USDC=$(spl-token --url "$RPC_URL" account-info --address "$ATA" 2>/dev/null \
+          | awk '/Balance:/ {print $2}')
+        CURRENT_USDC="${CURRENT_USDC:-0}"
+
+        MINT_AMOUNT=$(awk -v current="$CURRENT_USDC" -v target="$TARGET_USDC" 'BEGIN {
+          diff = target - current;
+          if (diff < 0) diff = 0;
+          printf "%.6f", diff;
+        }')
+
+        if [ "$MINT_AMOUNT" != "0.000000" ]; then
+          spl-token --url "$RPC_URL" --fee-payer "$KEYPAIR" mint "$MINT" "$MINT_AMOUNT" "$ATA" >/dev/null
+        fi
+
+        echo "wallet  = $WALLET"
+        echo "rpc     = $RPC_URL"
+        echo "mint    = $MINT"
+        echo "ata     = $ATA"
+        echo "target_sol   = $TARGET_SOL"
+        echo "target_usdc  = $TARGET_USDC"
+        echo "minted_usdc  = $MINT_AMOUNT"

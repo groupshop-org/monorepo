@@ -5,3 +5,5 @@ pub const SQL_TABLE_USER_ACCOUNT_PROFILE: &str = "user_account_profile";
 pub const SQL_TABLE_PRODUCT_CATEGORY: &str = "product_category";
 pub const SQL_TABLE_PRODUCT_BRAND: &str = "product_brand";
 pub const SQL_TABLE_PRODUCT_CATALOG: &str = "product_catalog";
+pub const SQL_TABLE_USER_PARTICIPATION: &str = "user_participation";
+pub const SQL_TABLE_PRODUCT_BATCH: &str = "product_batch";

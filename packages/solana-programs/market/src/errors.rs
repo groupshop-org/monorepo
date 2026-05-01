@@ -27,6 +27,7 @@ pub enum MarketError {
     VaultUnderfunded = 20,
     AmountOverflow = 21,
     ZeroDepositAmount = 22,
+    InvalidThreshold = 23,
 }
 
 impl From<MarketError> for ProgramError {
