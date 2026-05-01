@@ -9,6 +9,20 @@ vars:
   PATH_TRUNK_DIST_LANDING: '{{joinPath .PATH_TRUNK_DIST "landing"}}'
 
 tasks:
+  ensure-pages-project:
+    desc: "Ensure the landing Cloudflare Pages project exists"
+    env:
+      CLOUDFLARE_API_TOKEN: "{{.CLOUDFLARE_DEPLOY_API_TOKEN}}"
+    cmds:
+      - |
+        set -euo pipefail
+        PROJECT="{{.CF_PAGES_PROJECT_LANDING}}"
+        if wrangler pages project list --json | jq -e --arg project "$PROJECT" '.[] | select(."Project Name" == $project)' >/dev/null; then
+          echo "Cloudflare Pages project exists: $PROJECT"
+        else
+          wrangler pages project create "$PROJECT" --production-branch "{{.CF_PAGES_BRANCH_LANDING}}"
+        fi
+
   prepare-wallet-bridge:
     internal: true
     cmds:
@@ -24,12 +38,13 @@ tasks:
     deps: ["prepare-wallet-bridge", "prepare-solana-config"]
     dir: "{{.PATH_PACKAGE_LANDING}}"
     env:
-      URL_API: "${URL_API_PROD}"
+      URL_API: "{{.URL_API_PROD}}"
       URL_MEDIA: "/media"
-      URL_ADMIN: "${URL_ADMIN_PROD}"
-      SOLANA_NETWORK: "{{.SOLANA_NETWORK_ACTIVE}}"
+      URL_ADMIN: "{{.URL_ADMIN_PROD}}"
     cmds:
+      - task solana-programs:require-deploy-config
       - >
+        SOLANA_NETWORK="{{.SOLANA_NETWORK_DEPLOY}}"
         NO_COLOR=true trunk build
         --release
         --dist "{{.PATH_TRUNK_DIST_LANDING}}"
@@ -71,4 +86,8 @@ tasks:
     env:
       CLOUDFLARE_API_TOKEN: "{{.CLOUDFLARE_DEPLOY_API_TOKEN}}"
     cmds:
-      - wrangler pages deploy "{{.PATH_TRUNK_DIST_LANDING}}" --project-name=groupshop-landing
+      - task: ensure-pages-project
+      - >
+        wrangler pages deploy "{{.PATH_TRUNK_DIST_LANDING}}"
+        --project-name="{{.CF_PAGES_PROJECT_LANDING}}"
+        --branch "{{.CF_PAGES_BRANCH_LANDING}}"

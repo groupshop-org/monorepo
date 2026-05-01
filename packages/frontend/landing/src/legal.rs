@@ -7,7 +7,20 @@ pub fn privacy_policy() -> PageContent {
     PageContent {
         title: "Privacy Policy",
         html: r#"
-            <p><strong>Effective Date:</strong> April 10, 2026</p>
+            <p><strong>Effective Date:</strong> May 1, 2026</p>
+
+            <div style="background:#fff3cd;border:1px solid #ffc107;border-radius:0.75rem;padding:1rem 1.25rem;margin-bottom:1.5rem">
+                <strong>Beta Notice</strong>
+                <p style="margin:0.5rem 0 0">
+                    Groupshop is currently operating as a <strong>beta product</strong> for the Colosseum Frontier Hackathon.
+                    All activity runs on <strong>Solana devnet / testnet only</strong> — no real money, tokens, or purchases
+                    are involved. We may delete, reset, or modify any account data, product listings, or order history
+                    at any time without notice. By using the service during this beta period you acknowledge that your
+                    data may be wiped and that Groupshop has no financial obligations or liability arising from any
+                    beta activity.
+                </p>
+            </div>
+
             <p>
                 This Privacy Policy explains how Groupshop collects, uses, shares, and protects personal information when you use the Groupshop website, applications, and related services, including our on-chain group buying features, account features, and customer support.
             </p>
@@ -135,7 +148,20 @@ pub fn terms_of_service() -> PageContent {
     PageContent {
         title: "Terms of Service",
         html: r#"
-            <p><strong>Effective Date:</strong> April 10, 2026</p>
+            <p><strong>Effective Date:</strong> May 1, 2026</p>
+
+            <div style="background:#fff3cd;border:1px solid #ffc107;border-radius:0.75rem;padding:1rem 1.25rem;margin-bottom:1.5rem">
+                <strong>Beta Notice</strong>
+                <p style="margin:0.5rem 0 0">
+                    Groupshop is currently operating as a <strong>beta product</strong> for the Colosseum Frontier Hackathon.
+                    All on-chain activity runs on <strong>Solana devnet / testnet only</strong>. No real purchases are being
+                    made, no real money or tokens are transferred, and no orders will be fulfilled during this beta period.
+                    We may delete, reset, or modify any data at any time without notice. Groupshop has no financial
+                    obligations, payment obligations, or liability of any kind arising from activity during the beta period.
+                    These terms apply alongside and do not replace the beta-specific limitations described in this notice.
+                </p>
+            </div>
+
             <p>
                 These Terms of Service govern your access to and use of the Groupshop website, applications, and related services, including any group buying, account, wallet, order, shipping, and support features that we make available.
             </p>
@@ -243,6 +269,77 @@ pub fn terms_of_service() -> PageContent {
             <h2>16. Contact Us</h2>
             <p>
                 Questions about these Terms may be sent to <a href="mailto:contract@groupshop.org">contract@groupshop.org</a>.
+            </p>
+        "#,
+    }
+}
+
+pub fn help_page() -> PageContent {
+    PageContent {
+        title: "Getting Started",
+        html: r#"
+            <div style="background:#fff3cd;border:1px solid #ffc107;border-radius:0.75rem;padding:1rem 1.25rem;margin-bottom:1.5rem">
+                <strong>Beta — Solana Devnet Only</strong>
+                <p style="margin:0.5rem 0 0">
+                    Groupshop is running on <strong>Solana devnet</strong> for the Colosseum Frontier Hackathon.
+                    No real money is involved. You need a Phantom wallet funded with devnet SOL and devnet USDC
+                    to place a group order.
+                </p>
+            </div>
+
+            <h2>Step 1 — Install Phantom</h2>
+            <p>
+                Install the <a href="https://phantom.app/" target="_blank" rel="noopener">Phantom browser extension</a>
+                if you don't have it already. Create or import a wallet and keep your seed phrase safe.
+            </p>
+
+            <h2>Step 2 — Switch Phantom to Devnet</h2>
+            <p>
+                Open Phantom → Settings → Developer Settings → Change Network → select <strong>Devnet</strong>.
+                Groupshop deposits will fail if Phantom is on mainnet or testnet.
+            </p>
+
+            <h2>Step 3 — Get Devnet SOL (for transaction fees)</h2>
+            <p>
+                You need a small amount of devnet SOL to pay Solana transaction fees (a few lamports per transaction).
+            </p>
+            <ol>
+                <li>Go to <a href="https://faucet.solana.com/" target="_blank" rel="noopener">faucet.solana.com</a>.</li>
+                <li>Paste your Phantom wallet address.</li>
+                <li>Select <strong>Devnet</strong> and request SOL.</li>
+            </ol>
+            <p>If the faucet is rate-limited, try again in a few minutes or request a smaller amount.</p>
+
+            <h2>Step 4 — Get Devnet USDC (for deposits)</h2>
+            <p>
+                Groupshop escrow deposits are denominated in USDC. You need devnet USDC from Circle's faucet.
+            </p>
+            <ol>
+                <li>Go to <a href="https://faucet.circle.com/" target="_blank" rel="noopener">faucet.circle.com</a>.</li>
+                <li>Select <strong>USDC</strong> on <strong>Solana</strong>, network <strong>Devnet</strong>.</li>
+                <li>Paste your Phantom wallet address and request USDC.</li>
+            </ol>
+            <p>
+                This creates your USDC token account automatically. You only need to do this once —
+                subsequent requests top up the same account.
+            </p>
+
+            <h2>Step 5 — Place a Group Order</h2>
+            <ol>
+                <li>Sign in to Groupshop (or create an account).</li>
+                <li>Browse to a product and open its detail page.</li>
+                <li>Click <strong>Connect Phantom</strong> and approve the connection.</li>
+                <li>Click <strong>Deposit to escrow</strong> and approve the transaction in Phantom.</li>
+            </ol>
+            <p>
+                Your deposit is held in a Solana escrow program until the group order threshold is met.
+                If the deal doesn't fill, you can withdraw your deposit at any time from
+                <a href="/orders">My Orders</a>.
+            </p>
+
+            <h2>Need help?</h2>
+            <p>
+                Reach out at <a href="mailto:support@groupshop.org">support@groupshop.org</a>.
             </p>
         "#,
     }

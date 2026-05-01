@@ -31,6 +31,14 @@ async fn main() -> Result<()> {
             )
             .await?;
         }
+        Command::WipeCatalog { api_url } => {
+            command::wipe_catalog::run(
+                &api_url,
+                &ctx.args.api_auth_email,
+                &ctx.args.api_auth_password,
+            )
+            .await?;
+        }
         Command::Market { sub } => {
             command::market::run(&mut ctx, sub)?;
         }

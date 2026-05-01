@@ -6,6 +6,21 @@ includes:
     flatten: true
 
 tasks:
+  deploy:
+    desc: "Deploy the health check worker to Cloudflare"
+    deps: ["build-release"]
+    env:
+      CLOUDFLARE_API_TOKEN: "{{.CLOUDFLARE_DEPLOY_API_TOKEN}}"
+    cmds:
+      - >
+        wrangler deploy
+        -c "{{.PATH_CLOUDFLARE_HEALTH_WRANGLER_CONFIG}}"
+        --var "URL_API:{{.URL_API_PROD}}"
+        --var "URL_LANDING:{{.URL_LANDING_PROD}}"
+        --var "URL_LANDING_MEDIA:{{.URL_LANDING_MEDIA_PROD}}"
+        --var "URL_SOLANA_RPC:{{.SOLANA_RPC_URL_DEPLOY}}"
+        --var "ALLOWED_ORIGIN:{{.URL_HEALTH_DASHBOARD_PROD}}"
+
   dev:
     desc: "Run the health check worker in development mode"
     deps: ["build-dev-once"]
@@ -17,6 +32,12 @@ tasks:
     dir: "{{.PATH_PACKAGE_HEALTH_BACKEND}}"
     cmds:
       - worker-build --dev
+
+  build-release:
+    internal: true
+    dir: "{{.PATH_PACKAGE_HEALTH_BACKEND}}"
+    cmds:
+      - worker-build --release
 
   dev-inner:
     internal: true

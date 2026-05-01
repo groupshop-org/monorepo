@@ -79,6 +79,98 @@ tasks:
         "{{.PATH_ARTIFACT_PROGRAM_MARKET}}"
         > "{{.PATH_DEPLOYMENT_MARKET_PROGRAM_LOCAL}}"
 
+  create-devnet-deploy-keypair:
+    desc: "Create the local keypair file used to deploy/upgrade devnet programs"
+    cmds:
+      - |
+        set -euo pipefail
+        export PATH="{{.PATH_SOLANA_BIN}}:$PATH"
+        KEYPAIR="{{.SOLANA_DEPLOY_KEYPAIR}}"
+        if [ -f "$KEYPAIR" ]; then
+          echo "deploy keypair already exists: $KEYPAIR" >&2
+          exit 1
+        fi
+        mkdir -p "$(dirname "$KEYPAIR")"
+        solana-keygen new --no-bip39-passphrase --silent --outfile "$KEYPAIR" >/dev/null
+        echo "deploy_keypair = $KEYPAIR"
+        echo "deploy_pubkey  = $(solana-keygen pubkey "$KEYPAIR")"
+
+  devnet-deploy-info:
+    desc: "Show devnet deploy wallet, balance, configured USDC mint, and saved program ID"
+    cmds:
+      - |
+        set -euo pipefail
+        export PATH="{{.PATH_SOLANA_BIN}}:$PATH"
+        KEYPAIR="{{.SOLANA_DEPLOY_KEYPAIR}}"
+        PROGRAM_KEYPAIR="{{.PATH_DEPLOYMENT_MARKET_PROGRAM_KEYPAIR_DEVNET}}"
+        RPC_URL="{{.SOLANA_RPC_URL_DEVNET}}"
+        if [ ! -f "$KEYPAIR" ]; then
+          echo "missing SOLANA_DEPLOY_KEYPAIR at $KEYPAIR" >&2
+          echo "create it with: task solana-programs:create-devnet-deploy-keypair" >&2
+          exit 1
+        fi
+        PUBKEY=$(solana-keygen pubkey "$KEYPAIR")
+        BALANCE=$(solana --url "$RPC_URL" balance "$PUBKEY" 2>/dev/null | awk '{print $1}')
+        echo "network        = devnet"
+        echo "rpc_url        = $RPC_URL"
+        echo "deploy_keypair = $KEYPAIR"
+        echo "deploy_pubkey  = $PUBKEY"
+        echo "deploy_sol     = ${BALANCE:-0}"
+        if [ -f "$PROGRAM_KEYPAIR" ]; then
+          echo "program_keypair = $PROGRAM_KEYPAIR"
+          echo "program_keypair_pubkey = $(solana-keygen pubkey "$PROGRAM_KEYPAIR")"
+        fi
+        echo "program_id     = {{.SOLANA_MARKET_PROGRAM_ID_DEVNET}}"
+        echo "usdc_mint      = {{.SOLANA_USDC_MINT_DEVNET}}"
+
+  require-deploy-config:
+    desc: "Validate production Solana deploy configuration"
+    cmds:
+      - |
+        set -euo pipefail
+        if [ "{{.SOLANA_NETWORK_DEPLOY}}" != "devnet" ]; then
+          echo "unsupported SOLANA_NETWORK_DEPLOY={{.SOLANA_NETWORK_DEPLOY}}; expected devnet" >&2
+          exit 1
+        fi
+        if [ -z "{{.SOLANA_MARKET_PROGRAM_ID_DEPLOY}}" ]; then
+          echo "missing devnet market program ID; run task solana-programs:deploy-devnet or set SOLANA_MARKET_PROGRAM_ID_DEVNET" >&2
+          exit 1
+        fi
+        if [ -z "{{.SOLANA_USDC_MINT_DEPLOY}}" ]; then
+          echo "missing SOLANA_USDC_MINT_DEVNET" >&2
+          exit 1
+        fi
+
+  deploy-devnet:
+    desc: "Build and deploy the market program to Solana devnet"
+    cmds:
+      - task: build-release
+      - |
+        set -euo pipefail
+        export PATH="{{.PATH_SOLANA_BIN}}:$PATH"
+        KEYPAIR="{{.SOLANA_DEPLOY_KEYPAIR}}"
+        PROGRAM_KEYPAIR="{{.PATH_DEPLOYMENT_MARKET_PROGRAM_KEYPAIR_DEVNET}}"
+        RPC_URL="{{.SOLANA_RPC_URL_DEVNET}}"
+        if [ ! -f "$KEYPAIR" ]; then
+          echo "missing SOLANA_DEPLOY_KEYPAIR at $KEYPAIR" >&2
+          echo "create it with: task solana-programs:create-devnet-deploy-keypair" >&2
+          exit 1
+        fi
+        mkdir -p "{{.PATH_DEPLOYMENTS_DEVNET}}"
+        if [ ! -f "$PROGRAM_KEYPAIR" ]; then
+          solana-keygen new --no-bip39-passphrase --silent --outfile "$PROGRAM_KEYPAIR" >/dev/null
+        fi
+        solana program deploy \
+          --output json \
+          --url "$RPC_URL" \
+          --keypair "$KEYPAIR" \
+          --program-id "$PROGRAM_KEYPAIR" \
+          --upgrade-authority "$KEYPAIR" \
+          "{{.PATH_ARTIFACT_PROGRAM_MARKET}}" \
+          > "{{.PATH_DEPLOYMENT_MARKET_PROGRAM_DEVNET}}"
+      - task: write-frontend-config
+      - task: id-market-devnet
+
   ensure-local-usdc-mint:
     internal: true
     cmds:
@@ -115,6 +207,11 @@ tasks:
     cmds:
       - jq -r .programId "{{.PATH_DEPLOYMENT_MARKET_PROGRAM_LOCAL}}"
 
+  id-market-devnet:
+    desc: "Get the program ID of the devnet deployed market program"
+    cmds:
+      - jq -r .programId "{{.PATH_DEPLOYMENT_MARKET_PROGRAM_DEVNET}}"
+
   write-frontend-config:
     desc: "Write the landing frontend Solana deployment manifest"
     cmds:
@@ -126,7 +223,7 @@ tasks:
           --arg local_program "{{.SOLANA_MARKET_PROGRAM_ID_LOCAL}}" \
           --arg local_mint "{{.SOLANA_USDC_MINT_LOCAL}}" \
           --arg devnet_network "devnet" \
-          --arg devnet_rpc "{{.SOLANA_RPC_URL_DEVNET}}" \
+          --arg devnet_rpc "{{.SOLANA_RPC_URL_CLIENT_DEVNET}}" \
           --arg devnet_program "{{.SOLANA_MARKET_PROGRAM_ID_DEVNET}}" \
           --arg devnet_mint "{{.SOLANA_USDC_MINT_DEVNET}}" \
           '{

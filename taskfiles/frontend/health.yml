@@ -9,6 +9,43 @@ vars:
   PATH_TRUNK_DIST_HEALTH: '{{joinPath .PATH_TRUNK_DIST "health"}}'
 
 tasks:
+  ensure-pages-project:
+    desc: "Ensure the health dashboard Cloudflare Pages project exists"
+    env:
+      CLOUDFLARE_API_TOKEN: "{{.CLOUDFLARE_DEPLOY_API_TOKEN}}"
+    cmds:
+      - |
+        set -euo pipefail
+        PROJECT="{{.CF_PAGES_PROJECT_HEALTH}}"
+        if wrangler pages project list --json | jq -e --arg project "$PROJECT" '.[] | select(."Project Name" == $project)' >/dev/null; then
+          echo "Cloudflare Pages project exists: $PROJECT"
+        else
+          wrangler pages project create "$PROJECT" --production-branch "{{.CF_PAGES_BRANCH_HEALTH}}"
+        fi
+
+  build:
+    desc: "Build the health dashboard for production"
+    dir: "{{.PATH_PACKAGE_HEALTH_DASHBOARD}}"
+    env:
+      URL_HEALTH_API: "{{.URL_HEALTH_PROD}}"
+    cmds:
+      - >
+        NO_COLOR=true trunk build
+        --release
+        --dist "{{.PATH_TRUNK_DIST_HEALTH}}"
+
+  deploy:
+    desc: "Deploy the health dashboard to Cloudflare Pages"
+    deps: ["build"]
+    env:
+      CLOUDFLARE_API_TOKEN: "{{.CLOUDFLARE_DEPLOY_API_TOKEN}}"
+    cmds:
+      - task: ensure-pages-project
+      - >
+        wrangler pages deploy "{{.PATH_TRUNK_DIST_HEALTH}}"
+        --project-name="{{.CF_PAGES_PROJECT_HEALTH}}"
+        --branch "{{.CF_PAGES_BRANCH_HEALTH}}"
+
   dev:
     desc: "Run the health dashboard in development mode"
     dir: "{{.PATH_PACKAGE_HEALTH_DASHBOARD}}"

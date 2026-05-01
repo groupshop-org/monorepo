@@ -6,6 +6,45 @@ includes:
     flatten: true
 
 tasks:
+  put-prod-secrets:
+    desc: "Upload required production API secrets from local env/keypair"
+    env:
+      CLOUDFLARE_API_TOKEN: "{{.CLOUDFLARE_DEPLOY_API_TOKEN}}"
+    cmds:
+      - |
+        set -euo pipefail
+
+        for key in API_OPENID_GOOGLE_CLIENT_ID API_OPENID_GOOGLE_CLIENT_SECRET API_TOKEN_SIGNING_KEY; do
+          value="$(printenv "$key" || true)"
+          if [ -z "$value" ]; then
+            echo "missing required secret source env var: $key" >&2
+            exit 1
+          fi
+          printf "%s" "$value" | wrangler secret put "$key" -c "{{.PATH_CLOUDFLARE_API_WRANGLER_CONFIG}}" --env prod >/dev/null
+          echo "uploaded secret $key"
+        done
+
+        for key in API_POSTMARK_SERVER_TOKEN API_DEFAULT_ADMIN_EMAILS; do
+          value="$(printenv "$key" || true)"
+          if [ -n "$value" ]; then
+            printf "%s" "$value" | wrangler secret put "$key" -c "{{.PATH_CLOUDFLARE_API_WRANGLER_CONFIG}}" --env prod >/dev/null
+            echo "uploaded secret $key"
+          fi
+        done
+
+        if [ ! -s "{{.SOLANA_AUTHORITY_KEYPAIR}}" ]; then
+          echo "missing SOLANA_AUTHORITY_KEYPAIR at {{.SOLANA_AUTHORITY_KEYPAIR}}" >&2
+          exit 1
+        fi
+        wrangler secret put SOLANA_AUTHORITY_KEYPAIR_JSON \
+          -c "{{.PATH_CLOUDFLARE_API_WRANGLER_CONFIG}}" \
+          --env prod < "{{.SOLANA_AUTHORITY_KEYPAIR}}" >/dev/null
+        echo "uploaded secret SOLANA_AUTHORITY_KEYPAIR_JSON"
+
+        printf "%s" "{{.SOLANA_RPC_URL_DEPLOY}}" | wrangler secret put SOLANA_RPC_URL \
+          -c "{{.PATH_CLOUDFLARE_API_WRANGLER_CONFIG}}" --env prod >/dev/null
+        echo "uploaded secret SOLANA_RPC_URL"
+
   dev:
     desc: "Run the backend API in development mode"
     deps: ["build-dev-once"]
@@ -19,14 +58,15 @@ tasks:
     env:
       CLOUDFLARE_API_TOKEN: "{{.CLOUDFLARE_DEPLOY_API_TOKEN}}"
     cmds:
+      - task solana-programs:require-deploy-config
       - >
         wrangler deploy
         -c "{{.PATH_CLOUDFLARE_API_WRANGLER_CONFIG}}"
         --env prod
-        --var "SOLANA_NETWORK:{{.SOLANA_NETWORK_ACTIVE}}"
-        --var "SOLANA_RPC_URL:{{.SOLANA_RPC_URL_ACTIVE}}"
-        --var "SOLANA_MARKET_PROGRAM_ID:{{.SOLANA_MARKET_PROGRAM_ID_ACTIVE}}"
-        --var "SOLANA_USDC_MINT:{{.SOLANA_USDC_MINT_ACTIVE}}"
+        --var "SOLANA_NETWORK:{{.SOLANA_NETWORK_DEPLOY}}"
+        --var "SOLANA_RPC_URL_CLIENT:{{.SOLANA_RPC_URL_CLIENT_DEPLOY}}"
+        --var "SOLANA_MARKET_PROGRAM_ID:{{.SOLANA_MARKET_PROGRAM_ID_DEPLOY}}"
+        --var "SOLANA_USDC_MINT:{{.SOLANA_USDC_MINT_DEPLOY}}"
 
   build-dev-once:
     internal: true
@@ -80,6 +120,7 @@ tasks:
         --var "POSTMARK_MESSAGE_STREAM:{{.API_POSTMARK_MESSAGE_STREAM}}"
         --var "SOLANA_NETWORK:{{.SOLANA_NETWORK_ACTIVE}}"
         --var "SOLANA_RPC_URL:{{.SOLANA_RPC_URL_ACTIVE}}"
+        --var "SOLANA_RPC_URL_CLIENT:{{.SOLANA_RPC_URL_ACTIVE}}"
         --var "SOLANA_MARKET_PROGRAM_ID:{{.SOLANA_MARKET_PROGRAM_ID_ACTIVE}}"
         --var "SOLANA_USDC_MINT:{{.SOLANA_USDC_MINT_ACTIVE}}"
         --var "SOLANA_AUTHORITY_KEYPAIR_JSON:{{.SOLANA_AUTHORITY_KEYPAIR_JSON_LOCAL}}"

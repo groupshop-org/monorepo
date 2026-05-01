@@ -229,6 +229,10 @@ async fn handle_route(
                 admin::brand::handle_admin_delete_brand(ctx, req).await?;
                 Ok(ApiHandlerResponse::raw(empty_response(None)))
             }
+            ApiAdminRoute::WipeCatalog => {
+                admin::product::handle_admin_wipe_catalog(ctx).await?;
+                Ok(ApiHandlerResponse::raw(empty_response(None)))
+            }
         },
         ApiRoute::Product(product_route) => match product_route {
             ApiProductRoute::List => Ok(product::handle_product_list(ctx, req).await?.boxed()),

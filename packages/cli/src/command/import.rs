@@ -1,4 +1,7 @@
 use std::collections::{HashMap, HashSet};
+use std::time::Duration;
+
+use tokio::time::sleep;
 
 use anyhow::{bail, Context, Result};
 use groupshop_backend_shared::prelude::*;
@@ -147,6 +150,21 @@ pub async fn run(
         );
     }
 
+    // 1c. Filter out placeholder/missing images
+    {
+        let before = rows.len();
+        rows.retain(|row| !row.image_url.contains("6f37ced36498c7df3a3897a9dbbb3384.jpg"));
+        let removed = before - rows.len();
+        if removed > 0 {
+            println!(
+                "Filtered by valid image: {} -> {} rows ({} removed)",
+                before,
+                rows.len(),
+                removed
+            );
+        }
+    }
+
     // 2. Extract unique categories and brands
     let mut category_names: HashSet<String> = HashSet::new();
     let mut brand_names: HashSet<String> = HashSet::new();
@@ -210,7 +228,10 @@ pub async fn run(
 
     // 4. Authenticate
     println!("Signing in as {email}...");
-    let client = Client::builder().cookie_store(true).build()?;
+    let client = Client::builder()
+        .cookie_store(true)
+        .timeout(Duration::from_secs(30))
+        .build()?;
 
     let signin_url = format!(
         "{}/auth/email-password/signin",
@@ -260,10 +281,14 @@ pub async fn run(
         session_token,
     };
 
-    // 6. Create categories
+    // 7. Create categories
     let mut cat_created = 0u32;
     let mut cat_skipped = 0u32;
-    for name in &used_categories {
+    let cat_total = used_categories.len();
+    for (cat_i, name) in used_categories.iter().enumerate() {
+        if cat_i % 50 == 0 {
+            println!("  Categories: {cat_i}/{cat_total}...");
+        }
         let slug = &category_slugs[name];
         let id = match ProductCategoryId::new(slug) {
             Ok(id) => id,
@@ -299,10 +324,14 @@ pub async fn run(
     }
     println!("Categories: {cat_created} created, {cat_skipped} skipped");
 
-    // 7. Create brands
+    // 8. Create brands
     let mut brand_created = 0u32;
     let mut brand_skipped = 0u32;
-    for name in &used_brands {
+    let brand_total = used_brands.len();
+    for (brand_i, name) in used_brands.iter().enumerate() {
+        if brand_i % 100 == 0 {
+            println!("  Brands: {brand_i}/{brand_total}...");
+        }
         let slug = &brand_slugs[name];
         let id = match ProductBrandId::new(slug) {
             Ok(id) => id,
@@ -334,10 +363,11 @@ pub async fn run(
                 }
             }
         }
+        sleep(Duration::from_millis(50)).await;
     }
     println!("Brands: {brand_created} created, {brand_skipped} skipped");
 
-    // 8. Create products
+    // 9. Create products
     let mut prod_created = 0u32;
     let mut prod_skipped = 0u32;
     let total = selected_rows.len();
@@ -439,6 +469,7 @@ pub async fn run(
                 }
             }
         }
+        sleep(Duration::from_millis(50)).await;
     }
     println!("Products: {prod_created} created, {prod_skipped} skipped");
 

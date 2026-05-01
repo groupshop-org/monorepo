@@ -31,7 +31,11 @@ pub struct Config {
 #[derive(Debug, Clone)]
 pub struct SolanaConfig {
     pub network: String,
+    /// Internal RPC used for server-side Solana calls (may be a private endpoint).
     pub rpc_url: String,
+    /// RPC URL returned to clients in responses and embedded in the frontend manifest.
+    /// Falls back to `rpc_url` when `SOLANA_RPC_URL_CLIENT` is not set.
+    pub rpc_url_client: String,
     pub market_program_id: String,
     pub usdc_mint: String,
     pub authority_signing_key: [u8; 32],
@@ -138,9 +142,13 @@ impl Config {
 
 impl SolanaConfig {
     fn new(env: &Env) -> Self {
+        let rpc_url = required_env_var(env, "SOLANA_RPC_URL");
+        let rpc_url_client = optional_env_var(env, "SOLANA_RPC_URL_CLIENT")
+            .unwrap_or_else(|| rpc_url.clone());
         Self {
             network: required_env_var(env, "SOLANA_NETWORK"),
-            rpc_url: required_env_var(env, "SOLANA_RPC_URL"),
+            rpc_url,
+            rpc_url_client,
             market_program_id: required_env_var(env, "SOLANA_MARKET_PROGRAM_ID"),
             usdc_mint: required_env_var(env, "SOLANA_USDC_MINT"),
             authority_signing_key: parse_authority_keypair(&required_env_var(
@@ -170,6 +178,7 @@ fn required_env_var(env: &Env, key: &str) -> String {
     env.var(key)
         .ok()
         .map(|value| normalize_env_value(value.to_string()))
+        .or_else(|| env.secret(key).ok().map(|value| normalize_env_value(value.to_string())))
         .or_else(|| std::env::var(key).ok().map(normalize_env_value))
         .unwrap_or_else(|| panic!("{key} must be set"))
 }
@@ -178,6 +187,7 @@ fn optional_env_var(env: &Env, key: &str) -> Option<String> {
     env.var(key)
         .ok()
         .map(|value| normalize_env_value(value.to_string()))
+        .or_else(|| env.secret(key).ok().map(|value| normalize_env_value(value.to_string())))
         .or_else(|| std::env::var(key).ok().map(normalize_env_value))
 }
 

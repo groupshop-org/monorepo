@@ -118,6 +118,10 @@ pub async fn handle_admin_delete_product(ctx: &mut ApiContext, req: HttpRequest)
     ProductCatalogDb::delete(ctx, &req.id).await
 }
 
+pub async fn handle_admin_wipe_catalog(ctx: &mut ApiContext) -> ApiResult<()> {
+    ProductCatalogDb::delete_all(ctx).await
+}
+
 fn row_to_admin_summary(row: ProductCatalogDb) -> AdminProductSummary {
     AdminProductSummary {
         id: row.id,
