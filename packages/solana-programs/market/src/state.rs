@@ -29,6 +29,11 @@ impl PoolStatus {
 
 /// On-chain Pool account. `#[repr(C)]` with explicit padding so layout is
 /// deterministic and matches `Pool::LEN`.
+///
+/// A given `(product_hash, batch_id)` pair has at most one Pool. When a
+/// pool's `participant_count` crosses `threshold` the program auto-locks
+/// it; the backend then opens the next batch (`batch_id + 1`) so the
+/// product keeps recycling without admin intervention.
 #[repr(C)]
 pub struct Pool {
     pub version: u8,
@@ -44,9 +49,21 @@ pub struct Pool {
     pub shipping_total: u64,
     pub refundable_outstanding: u64,
     pub participant_count: u32,
-    pub _pad2: [u8; 4],
+    /// Group-deal threshold, measured in **units of the product**. Set at
+    /// init time; the program auto-locks when `total_quantity` reaches
+    /// this value. (Was: participant count. Renamed-in-place rather than
+    /// adding a new field — the on-chain layout is still ABI-compatible
+    /// with the wider Pool struct, just with different semantics.)
+    pub threshold: u32,
     pub created_at: i64,
     pub updated_at: i64,
+    /// Sequential batch number for this product. Bumped by the backend
+    /// when it opens a successor pool after the previous one auto-locks.
+    pub batch_id: u32,
+    pub _pad3: [u8; 4],
+    /// Sum of every active participation's `quantity`. Refunds
+    /// decrement this. Compared against `threshold` to decide auto-lock.
+    pub total_quantity: u64,
 }
 
 impl Pool {
@@ -105,6 +122,11 @@ pub struct Participation {
     pub product_amount: u64,
     pub shipping_amount: u64,
     pub deposited_at: i64,
+    /// Number of product units the buyer committed across all their
+    /// deposits to this batch. The on-chain `Pool.total_quantity`
+    /// invariant is the sum of this field across non-refunded
+    /// participations.
+    pub quantity: u64,
 }
 
 impl Participation {

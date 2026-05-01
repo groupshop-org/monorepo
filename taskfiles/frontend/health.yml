@@ -17,6 +17,7 @@ tasks:
     cmds:
       - >
         NO_COLOR=true trunk serve
+        --poll
         --port {{.PORT_HEALTH_DASHBOARD_DEV}}
         --dist "{{.PATH_TRUNK_DIST_HEALTH}}"
         --watch "{{.PATH_PACKAGE_FRONTEND_SHARED}}"

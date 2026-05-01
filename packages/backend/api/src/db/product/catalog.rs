@@ -1,6 +1,6 @@
 use wasm_bindgen::prelude::*;
 
-use crate::db::tables::SQL_TABLE_PRODUCT_CATALOG;
+use crate::db::tables::{SQL_TABLE_PRODUCT_CATALOG, SQL_TABLE_USER_PARTICIPATION};
 use crate::{
     prelude::*,
     utils::{db_execute, db_load, db_load_all, db_prepare, deserialize_d1_bool, get_d1},
@@ -51,39 +51,16 @@ impl ProductCatalogDb {
         brand_id: Option<&ProductBrandId>,
         search: Option<&str>,
         active_only: bool,
+        with_participants_only: bool,
     ) -> ApiResult<Vec<Self>> {
         let offset = (page.saturating_sub(1)) * per_page;
-        let mut where_parts = Vec::new();
-        let mut bindings: Vec<JsValue> = Vec::new();
-        let mut idx = 1u32;
-
-        if active_only {
-            where_parts.push("is_active = 1".to_string());
-        }
-
-        if let Some(cat) = category_id {
-            where_parts.push(format!("category_id = ?{idx}"));
-            bindings.push(JsValue::from_str(cat.as_str()));
-            idx += 1;
-        }
-
-        if let Some(brand) = brand_id {
-            where_parts.push(format!("brand_id = ?{idx}"));
-            bindings.push(JsValue::from_str(brand.as_str()));
-            idx += 1;
-        }
-
-        if let Some(search) = search {
-            where_parts.push(format!("name LIKE ?{idx}"));
-            bindings.push(JsValue::from_str(&format!("%{search}%")));
-            idx += 1;
-        }
-
-        let where_clause = if where_parts.is_empty() {
-            String::new()
-        } else {
-            format!("WHERE {}", where_parts.join(" AND "))
-        };
+        let (where_clause, mut bindings, mut idx) = build_filter_clauses(
+            category_id,
+            brand_id,
+            search,
+            active_only,
+            with_participants_only,
+        );
 
         bindings.push(JsValue::from_f64(per_page as f64));
         let limit_idx = idx;
@@ -107,42 +84,20 @@ impl ProductCatalogDb {
         brand_id: Option<&ProductBrandId>,
         search: Option<&str>,
         active_only: bool,
+        with_participants_only: bool,
     ) -> ApiResult<u32> {
         #[derive(serde::Deserialize)]
         struct CountRow {
             n: f64,
         }
 
-        let mut where_parts = Vec::new();
-        let mut bindings: Vec<JsValue> = Vec::new();
-        let mut idx = 1u32;
-
-        if active_only {
-            where_parts.push("is_active = 1".to_string());
-        }
-
-        if let Some(cat) = category_id {
-            where_parts.push(format!("category_id = ?{idx}"));
-            bindings.push(JsValue::from_str(cat.as_str()));
-            idx += 1;
-        }
-
-        if let Some(brand) = brand_id {
-            where_parts.push(format!("brand_id = ?{idx}"));
-            bindings.push(JsValue::from_str(brand.as_str()));
-            idx += 1;
-        }
-
-        if let Some(search) = search {
-            where_parts.push(format!("name LIKE ?{idx}"));
-            bindings.push(JsValue::from_str(&format!("%{search}%")));
-        }
-
-        let where_clause = if where_parts.is_empty() {
-            String::new()
-        } else {
-            format!("WHERE {}", where_parts.join(" AND "))
-        };
+        let (where_clause, bindings, _) = build_filter_clauses(
+            category_id,
+            brand_id,
+            search,
+            active_only,
+            with_participants_only,
+        );
 
         let row: CountRow = db_load(
             db_prepare(
@@ -290,6 +245,61 @@ impl ProductCatalogDb {
         )?)
         .await
     }
+}
+
+/// Builds the shared `WHERE` clause for `load_page` and `count` so the two
+/// stay in sync. Returns the formatted clause, the bound JsValue arguments,
+/// and the next free placeholder index for the caller to extend (e.g. with
+/// LIMIT/OFFSET binds).
+fn build_filter_clauses(
+    category_id: Option<&ProductCategoryId>,
+    brand_id: Option<&ProductBrandId>,
+    search: Option<&str>,
+    active_only: bool,
+    with_participants_only: bool,
+) -> (String, Vec<JsValue>, u32) {
+    let mut where_parts: Vec<String> = Vec::new();
+    let mut bindings: Vec<JsValue> = Vec::new();
+    let mut idx = 1u32;
+
+    if active_only {
+        where_parts.push("is_active = 1".to_string());
+    }
+
+    if let Some(cat) = category_id {
+        where_parts.push(format!("category_id = ?{idx}"));
+        bindings.push(JsValue::from_str(cat.as_str()));
+        idx += 1;
+    }
+
+    if let Some(brand) = brand_id {
+        where_parts.push(format!("brand_id = ?{idx}"));
+        bindings.push(JsValue::from_str(brand.as_str()));
+        idx += 1;
+    }
+
+    if let Some(search) = search {
+        where_parts.push(format!("name LIKE ?{idx}"));
+        bindings.push(JsValue::from_str(&format!("%{search}%")));
+        idx += 1;
+    }
+
+    if with_participants_only {
+        // Subquery on user_participation; the index on (product_id) keeps this
+        // cheap even when the catalog grows. This is the data path that
+        // backs the "deals gaining traction" landing-page filter.
+        where_parts.push(format!(
+            "EXISTS (SELECT 1 FROM {SQL_TABLE_USER_PARTICIPATION} up WHERE up.product_id = {SQL_TABLE_PRODUCT_CATALOG}.id)"
+        ));
+    }
+
+    let where_clause = if where_parts.is_empty() {
+        String::new()
+    } else {
+        format!("WHERE {}", where_parts.join(" AND "))
+    };
+
+    (where_clause, bindings, idx)
 }
 
 pub fn is_gtin_unique_violation(db_message: &str) -> bool {

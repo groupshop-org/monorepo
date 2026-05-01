@@ -30,6 +30,7 @@ tasks:
     cmds:
       - >
         NO_COLOR=true trunk serve
+        --poll
         --port {{.PORT_ADMIN_DEV}}
         --dist "{{.PATH_TRUNK_DIST_ADMIN}}"
         --watch "{{.PATH_PACKAGE_FRONTEND_SHARED}}"

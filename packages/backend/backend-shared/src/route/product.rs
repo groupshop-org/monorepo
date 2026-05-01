@@ -80,6 +80,11 @@ pub struct ProductListRequest {
     pub category_id: Option<ProductCategoryId>,
     pub brand_id: Option<ProductBrandId>,
     pub search: Option<String>,
+    /// When `true`, only products that have at least one confirmed
+    /// participation are returned. Backs the "deals gaining traction"
+    /// landing-page filter.
+    #[serde(default)]
+    pub with_participants_only: bool,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -161,6 +166,10 @@ pub struct ProductSummary {
     pub estimated_delivery_weeks: Option<u32>,
     pub image_url: String,
     pub is_active: bool,
+    /// Sum of `quantity` across non-refunded participations on the
+    /// product's active batch. Compare against `minimum_order_quantity`
+    /// (which is the unit threshold) to render the progress bar.
+    pub committed_units: u64,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

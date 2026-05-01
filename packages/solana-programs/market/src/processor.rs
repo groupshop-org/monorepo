@@ -13,7 +13,7 @@ use pinocchio_token::{
 
 use crate::{
     errors::MarketError,
-    instruction::{read_array, read_u64, read_u8, MarketIx},
+    instruction::{read_array, read_u32, read_u64, read_u8, MarketIx},
     pda::{assert_pda, PARTICIPATION_SEED, POOL_SEED, VAULT_SEED},
     state::{Participation, Pool, PoolStatus, STATE_VERSION},
 };
@@ -30,6 +30,7 @@ pub fn process(program_id: &Address, accounts: &mut [AccountView], data: &[u8]) 
         MarketIx::Release => release(program_id, accounts),
         MarketIx::EnterRefundMode => enter_refund_mode(program_id, accounts),
         MarketIx::ClaimRefund => claim_refund(program_id, accounts, rest),
+        MarketIx::SelfRefund => self_refund(program_id, accounts),
     }
 }
 
@@ -42,11 +43,17 @@ fn initialize_pool(
     accounts: &mut [AccountView],
     data: &[u8],
 ) -> ProgramResult {
-    // Parse: product_hash[32], pool_bump, vault_bump
+    // Parse: product_hash[32], pool_bump, vault_bump, batch_id (u32 LE), threshold (u32 LE)
     let mut cursor = 0;
     let product_hash: [u8; 32] = read_array(data, &mut cursor)?;
     let pool_bump = read_u8(data, &mut cursor)?;
     let vault_bump = read_u8(data, &mut cursor)?;
+    let batch_id = read_u32(data, &mut cursor)?;
+    let threshold = read_u32(data, &mut cursor)?;
+    if threshold == 0 {
+        return Err(MarketError::InvalidThreshold.into());
+    }
+    let batch_id_bytes = batch_id.to_le_bytes();
 
     let [authority, pool_ai, vault_ai, mint_ai, system_program_ai, token_program_ai] =
         split_accounts(accounts, 6)?;
@@ -57,13 +64,13 @@ fn initialize_pool(
 
     assert_pda(
         pool_ai.address(),
-        &[POOL_SEED, &product_hash, &[pool_bump]],
+        &[POOL_SEED, &product_hash, &batch_id_bytes, &[pool_bump]],
         program_id,
         MarketError::InvalidPoolPda,
     )?;
     assert_pda(
         vault_ai.address(),
-        &[VAULT_SEED, &product_hash, &[vault_bump]],
+        &[VAULT_SEED, &product_hash, &batch_id_bytes, &[vault_bump]],
         program_id,
         MarketError::InvalidVaultPda,
     )?;
@@ -83,6 +90,7 @@ fn initialize_pool(
     .invoke_signed(&[Signer::from(&[
         Seed::from(POOL_SEED),
         Seed::from(&product_hash[..]),
+        Seed::from(&batch_id_bytes[..]),
         Seed::from(&[pool_bump][..]),
     ])])?;
 
@@ -97,6 +105,7 @@ fn initialize_pool(
     .invoke_signed(&[Signer::from(&[
         Seed::from(VAULT_SEED),
         Seed::from(&product_hash[..]),
+        Seed::from(&batch_id_bytes[..]),
         Seed::from(&[vault_bump][..]),
     ])])?;
 
@@ -124,9 +133,12 @@ fn initialize_pool(
     pool.shipping_total = 0;
     pool.refundable_outstanding = 0;
     pool.participant_count = 0;
-    pool._pad2 = [0; 4];
+    pool.threshold = threshold;
     pool.created_at = now;
     pool.updated_at = now;
+    pool.batch_id = batch_id;
+    pool._pad3 = [0; 4];
+    pool.total_quantity = 0;
 
     // Suppress unused variable warnings for accounts we don't directly touch (they're
     // passed to CPIs by the runtime via the account array).
@@ -145,11 +157,15 @@ fn deposit(program_id: &Address, accounts: &mut [AccountView], data: &[u8]) -> P
     let participation_bump = read_u8(data, &mut cursor)?;
     let product_amount = read_u64(data, &mut cursor)?;
     let shipping_amount = read_u64(data, &mut cursor)?;
+    let quantity = read_u64(data, &mut cursor)?;
 
     let total = product_amount
         .checked_add(shipping_amount)
         .ok_or(ProgramError::from(MarketError::AmountOverflow))?;
     if total == 0 {
+        return Err(MarketError::ZeroDepositAmount.into());
+    }
+    if quantity == 0 {
         return Err(MarketError::ZeroDepositAmount.into());
     }
 
@@ -164,7 +180,7 @@ fn deposit(program_id: &Address, accounts: &mut [AccountView], data: &[u8]) -> P
     }
 
     // Load pool, check authority + status + mint + vault.
-    let product_hash = {
+    let (product_hash, batch_id_bytes) = {
         let pool = Pool::from_account(pool_ai)?;
         if pool.status()? != PoolStatus::Open {
             return Err(MarketError::PoolNotOpen.into());
@@ -178,22 +194,26 @@ fn deposit(program_id: &Address, accounts: &mut [AccountView], data: &[u8]) -> P
         if &pool.vault_address() != vault_ai.address() {
             return Err(MarketError::InvalidVaultAccount.into());
         }
-        // Verify pool PDA using stored bump.
+        let batch_id_bytes = pool.batch_id.to_le_bytes();
+        // Verify pool PDA using stored bump and batch_id.
         assert_pda(
             pool_ai.address(),
-            &[POOL_SEED, &pool.product_hash, &[pool.bump]],
+            &[POOL_SEED, &pool.product_hash, &batch_id_bytes, &[pool.bump]],
             program_id,
             MarketError::InvalidPoolPda,
         )?;
-        pool.product_hash
+        (pool.product_hash, batch_id_bytes)
     };
 
-    // Verify participation PDA.
+    // Verify participation PDA. The seeds include batch_id so each batch
+    // gets a fresh participation account, allowing the same buyer to
+    // participate in successive batches of the same product.
     assert_pda(
         participation_ai.address(),
         &[
             PARTICIPATION_SEED,
             &product_hash,
+            &batch_id_bytes,
             &user_id,
             &[participation_bump],
         ],
@@ -214,6 +234,7 @@ fn deposit(program_id: &Address, accounts: &mut [AccountView], data: &[u8]) -> P
         .invoke_signed(&[Signer::from(&[
             Seed::from(PARTICIPATION_SEED),
             Seed::from(&product_hash[..]),
+            Seed::from(&batch_id_bytes[..]),
             Seed::from(&user_id[..]),
             Seed::from(&[participation_bump][..]),
         ])])?;
@@ -256,6 +277,7 @@ fn deposit(program_id: &Address, accounts: &mut [AccountView], data: &[u8]) -> P
             p.product_amount = 0;
             p.shipping_amount = 0;
             p.deposited_at = now;
+            p.quantity = 0;
         }
         p.product_amount = p
             .product_amount
@@ -264,6 +286,10 @@ fn deposit(program_id: &Address, accounts: &mut [AccountView], data: &[u8]) -> P
         p.shipping_amount = p
             .shipping_amount
             .checked_add(shipping_amount)
+            .ok_or(ProgramError::from(MarketError::AmountOverflow))?;
+        p.quantity = p
+            .quantity
+            .checked_add(quantity)
             .ok_or(ProgramError::from(MarketError::AmountOverflow))?;
         p.deposited_at = now;
     }
@@ -288,6 +314,17 @@ fn deposit(program_id: &Address, accounts: &mut [AccountView], data: &[u8]) -> P
                 .participant_count
                 .checked_add(1)
                 .ok_or(ProgramError::from(MarketError::AmountOverflow))?;
+        }
+        pool.total_quantity = pool
+            .total_quantity
+            .checked_add(quantity)
+            .ok_or(ProgramError::from(MarketError::AmountOverflow))?;
+        // Auto-lock the moment the cumulative units committed reach the
+        // group-deal threshold. Triggers on any deposit (new buyer or
+        // top-up) so a single big buyer can clear the threshold alone
+        // — that's the natural wholesale group-buy semantic.
+        if pool.total_quantity >= pool.threshold as u64 {
+            pool.status = PoolStatus::Locked as u8;
         }
         pool.updated_at = now;
     }
@@ -322,9 +359,9 @@ fn release(program_id: &Address, accounts: &mut [AccountView]) -> ProgramResult 
         split_accounts(accounts, 5)?;
     ensure_authority(authority, pool_ai, program_id)?;
 
-    // Snapshot pool fields (product_hash, vault_bump, status) without holding a
-    // borrow across the CPI.
-    let (product_hash, vault_bump, vault_addr) = {
+    // Snapshot pool fields (product_hash, vault_bump, batch_id, status)
+    // without holding a borrow across the CPI.
+    let (product_hash, vault_bump, vault_addr, batch_id_bytes) = {
         let pool = Pool::from_account(pool_ai)?;
         if pool.status()? != PoolStatus::Locked {
             return Err(MarketError::PoolNotLocked.into());
@@ -332,13 +369,18 @@ fn release(program_id: &Address, accounts: &mut [AccountView]) -> ProgramResult 
         if &pool.vault_address() != vault_ai.address() {
             return Err(MarketError::InvalidVaultAccount.into());
         }
-        (pool.product_hash, pool.vault_bump, pool.vault_address())
+        (
+            pool.product_hash,
+            pool.vault_bump,
+            pool.vault_address(),
+            pool.batch_id.to_le_bytes(),
+        )
     };
 
     // Validate vault PDA.
     assert_pda(
         &vault_addr,
-        &[VAULT_SEED, &product_hash, &[vault_bump]],
+        &[VAULT_SEED, &product_hash, &batch_id_bytes, &[vault_bump]],
         program_id,
         MarketError::InvalidVaultPda,
     )?;
@@ -361,6 +403,7 @@ fn release(program_id: &Address, accounts: &mut [AccountView]) -> ProgramResult 
         .invoke_signed(&[Signer::from(&[
             Seed::from(VAULT_SEED),
             Seed::from(&product_hash[..]),
+            Seed::from(&batch_id_bytes[..]),
             Seed::from(&[vault_bump][..]),
         ])])?;
     }
@@ -425,13 +468,14 @@ fn claim_refund(program_id: &Address, accounts: &mut [AccountView], data: &[u8])
         split_accounts(accounts, 6)?;
     ensure_authority(authority, pool_ai, program_id)?;
 
-    let (product_hash, vault_bump, vault_addr, status) = {
+    let (product_hash, vault_bump, vault_addr, status, batch_id_bytes) = {
         let pool = Pool::from_account(pool_ai)?;
         (
             pool.product_hash,
             pool.vault_bump,
             pool.vault_address(),
             pool.status()?,
+            pool.batch_id.to_le_bytes(),
         )
     };
     if status != PoolStatus::Refunding {
@@ -450,10 +494,16 @@ fn claim_refund(program_id: &Address, accounts: &mut [AccountView], data: &[u8])
         if p.pool != *pool_ai.address().as_array() {
             return Err(MarketError::InvalidParticipationPda.into());
         }
-        // Verify PDA using the stored bump + user_id.
+        // Verify PDA using the stored bump + user_id + batch_id.
         assert_pda(
             participation_ai.address(),
-            &[PARTICIPATION_SEED, &product_hash, &p.user_id, &[p.bump]],
+            &[
+                PARTICIPATION_SEED,
+                &product_hash,
+                &batch_id_bytes,
+                &p.user_id,
+                &[p.bump],
+            ],
             program_id,
             MarketError::InvalidParticipationPda,
         )?;
@@ -472,6 +522,7 @@ fn claim_refund(program_id: &Address, accounts: &mut [AccountView], data: &[u8])
     .invoke_signed(&[Signer::from(&[
         Seed::from(VAULT_SEED),
         Seed::from(&product_hash[..]),
+        Seed::from(&batch_id_bytes[..]),
         Seed::from(&[vault_bump][..]),
     ])])?;
 
@@ -486,6 +537,140 @@ fn claim_refund(program_id: &Address, accounts: &mut [AccountView], data: &[u8])
             .refundable_outstanding
             .checked_sub(refund_amount)
             .ok_or(ProgramError::from(MarketError::AmountOverflow))?;
+        pool.updated_at = Clock::get()?.unix_timestamp;
+    }
+
+    let _ = token_program_ai;
+    Ok(())
+}
+
+// -------------------------------------------------------------------------
+// SelfRefund — buyer-initiated refund while the pool is still Open.
+// -------------------------------------------------------------------------
+
+fn self_refund(program_id: &Address, accounts: &mut [AccountView]) -> ProgramResult {
+    let [buyer, authority, pool_ai, participation_ai, vault_ai, buyer_ata_ai, token_program_ai] =
+        split_accounts(accounts, 7)?;
+
+    if !buyer.is_signer() {
+        return Err(MarketError::MissingBuyerSignature.into());
+    }
+    if !authority.is_signer() {
+        // Authority co-signs. This isn't strictly required for safety
+        // (the participation belongs to the buyer), but it lets the
+        // backend gate the action on rules that aren't representable
+        // on-chain — e.g. fraud holds.
+        return Err(MarketError::MissingAuthoritySignature.into());
+    }
+
+    // Snapshot pool fields without holding a borrow across CPIs.
+    let (product_hash, vault_bump, vault_addr, status, batch_id_bytes) = {
+        let pool = Pool::from_account(pool_ai)?;
+        (
+            pool.product_hash,
+            pool.vault_bump,
+            pool.vault_address(),
+            pool.status()?,
+            pool.batch_id.to_le_bytes(),
+        )
+    };
+    if status != PoolStatus::Open {
+        // Once a pool auto-locks (threshold reached) or is otherwise out
+        // of the recruiting phase, only the admin-mediated ClaimRefund
+        // path is allowed.
+        return Err(MarketError::PoolNotOpen.into());
+    }
+    if &vault_addr != vault_ai.address() {
+        return Err(MarketError::InvalidVaultAccount.into());
+    }
+    assert_pda(
+        &vault_addr,
+        &[VAULT_SEED, &product_hash, &batch_id_bytes, &[vault_bump]],
+        program_id,
+        MarketError::InvalidVaultPda,
+    )?;
+
+    // Validate the participation: belongs to this buyer + this pool, not
+    // already refunded.
+    let (
+        refund_amount,
+        product_amount,
+        shipping_amount,
+        quantity,
+        participation_bump,
+        participation_user_id,
+    ) = {
+        let p = Participation::from_account(participation_ai)?;
+        if p.refunded != 0 {
+            return Err(MarketError::ParticipationAlreadyRefunded.into());
+        }
+        if p.pool != *pool_ai.address().as_array() {
+            return Err(MarketError::InvalidParticipationPda.into());
+        }
+        if p.wallet != *buyer.address().as_array() {
+            return Err(MarketError::ParticipationWalletMismatch.into());
+        }
+        (
+            p.total()?,
+            p.product_amount,
+            p.shipping_amount,
+            p.quantity,
+            p.bump,
+            p.user_id,
+        )
+    };
+    assert_pda(
+        participation_ai.address(),
+        &[
+            PARTICIPATION_SEED,
+            &product_hash,
+            &batch_id_bytes,
+            &participation_user_id,
+            &[participation_bump],
+        ],
+        program_id,
+        MarketError::InvalidParticipationPda,
+    )?;
+
+    if refund_amount > 0 {
+        Transfer {
+            from: vault_ai,
+            to: buyer_ata_ai,
+            authority: vault_ai,
+            multisig_signers: &[] as &[&AccountView],
+            amount: refund_amount,
+        }
+        .invoke_signed(&[Signer::from(&[
+            Seed::from(VAULT_SEED),
+            Seed::from(&product_hash[..]),
+            Seed::from(&batch_id_bytes[..]),
+            Seed::from(&[vault_bump][..]),
+        ])])?;
+    }
+
+    // Mark the participation refunded and roll back pool aggregates.
+    {
+        let p = Participation::from_account_mut(participation_ai)?;
+        p.refunded = 1;
+    }
+    {
+        let pool = Pool::from_account_mut(pool_ai)?;
+        pool.refundable_outstanding = pool
+            .refundable_outstanding
+            .checked_sub(refund_amount)
+            .ok_or(ProgramError::from(MarketError::AmountOverflow))?;
+        pool.product_total = pool
+            .product_total
+            .checked_sub(product_amount)
+            .ok_or(ProgramError::from(MarketError::AmountOverflow))?;
+        pool.shipping_total = pool
+            .shipping_total
+            .checked_sub(shipping_amount)
+            .ok_or(ProgramError::from(MarketError::AmountOverflow))?;
+        // Refunded buyers don't count toward the threshold anymore —
+        // both the participant tally and the unit total roll back.
+        pool.participant_count = pool.participant_count.saturating_sub(1);
+        pool.total_quantity = pool.total_quantity.saturating_sub(quantity);
         pool.updated_at = Clock::get()?.unix_timestamp;
     }
 
@@ -529,10 +714,11 @@ fn ensure_authority(
     if &pool.authority_address() != authority.address() {
         return Err(MarketError::UnauthorizedAuthority.into());
     }
+    let batch_id_bytes = pool.batch_id.to_le_bytes();
     // Re-derive the pool PDA to make sure it's ours.
     assert_pda(
         pool_ai.address(),
-        &[POOL_SEED, &pool.product_hash, &[pool.bump]],
+        &[POOL_SEED, &pool.product_hash, &batch_id_bytes, &[pool.bump]],
         program_id,
         MarketError::InvalidPoolPda,
     )?;

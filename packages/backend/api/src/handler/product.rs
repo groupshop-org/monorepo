@@ -1,5 +1,10 @@
+use std::collections::HashMap;
+
 use crate::{
-    db::product::{brand::ProductBrandDb, catalog::ProductCatalogDb, category::ProductCategoryDb},
+    db::{
+        account::participation::UserParticipationDb,
+        product::{brand::ProductBrandDb, catalog::ProductCatalogDb, category::ProductCategoryDb},
+    },
     prelude::*,
     utils::req_to_json,
 };
@@ -20,6 +25,7 @@ pub async fn handle_product_list(
         req.brand_id.as_ref(),
         search,
         true,
+        req.with_participants_only,
     )
     .await?;
 
@@ -31,10 +37,26 @@ pub async fn handle_product_list(
         req.brand_id.as_ref(),
         search,
         true,
+        req.with_participants_only,
     )
     .await?;
 
-    let products = rows.into_iter().map(row_to_summary).collect();
+    // Hydrate `committed_units` for the *active* batch of each product
+    // in a single round-trip rather than N. Numbers are derived from
+    // D1 (mirror of the on-chain `Pool.total_quantity` maintained by
+    // the deposit-confirm endpoint) so no Solana RPC calls are required
+    // for paginated browsing — important for hosted RPCs that throttle.
+    let ids: Vec<&ProductId> = rows.iter().map(|row| &row.id).collect();
+    let units = UserParticipationDb::units_for_active_batches(ctx, &ids).await?;
+    let unit_map: HashMap<ProductId, u64> = units.into_iter().collect();
+
+    let products = rows
+        .into_iter()
+        .map(|row| {
+            let committed_units = unit_map.get(&row.id).copied().unwrap_or(0);
+            row_to_summary(row, committed_units)
+        })
+        .collect();
 
     Ok(ProductListResponse {
         page,
@@ -56,8 +78,19 @@ pub async fn handle_product_detail(
         return Err(ApiError::Validation("product not found".to_string()));
     }
 
+    // Detail page wants the committed-units total for the *active*
+    // batch. Look up that batch in D1; if no batch row exists yet the
+    // product has never had a deposit, so committed_units is 0.
+    let committed_units =
+        match crate::db::product::batch::ProductBatchDb::load_active(ctx, &row.id).await? {
+            Some(batch) if batch.pipeline_status == "open" => {
+                UserParticipationDb::units_for_batch(ctx, &row.id, batch.batch_id).await?
+            }
+            _ => 0,
+        };
+
     Ok(ProductDetailResponse {
-        product: row_to_summary(row),
+        product: row_to_summary(row, committed_units),
     })
 }
 
@@ -97,7 +130,7 @@ pub async fn handle_product_brands(
     Ok(ProductBrandsResponse { brands })
 }
 
-fn row_to_summary(row: ProductCatalogDb) -> ProductSummary {
+fn row_to_summary(row: ProductCatalogDb, committed_units: u64) -> ProductSummary {
     ProductSummary {
         id: row.id,
         gtin: row.gtin,
@@ -112,5 +145,6 @@ fn row_to_summary(row: ProductCatalogDb) -> ProductSummary {
         estimated_delivery_weeks: row.estimated_delivery_weeks,
         image_url: row.image_url,
         is_active: row.is_active,
+        committed_units,
     }
 }

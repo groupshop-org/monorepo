@@ -115,10 +115,14 @@ tasks:
 
         # --- happy path --------------------------------------------------
         echo "▸ initialize-pool"
+        # Threshold is set artificially high (10000) so the deposits in
+        # this test never trigger the auto-lock path; the test continues
+        # to exercise the explicit LockPool flow.
         CLI initialize-pool \
           --program-id "$PROGRAM" \
           --product-slug "$PRODUCT_SLUG" \
-          --usdc-mint "$MINT" >/dev/null
+          --usdc-mint "$MINT" \
+          --threshold 10000 >/dev/null
         assert_balance "$VAULT" 0 "vault after init"
         assert_balance "$BUYER_ATA" 1000 "buyer after init"
 
@@ -130,7 +134,8 @@ tasks:
           --buyer-keypair "$BUYER_KEYPAIR" \
           --buyer-ata "$BUYER_ATA" \
           --product-amount 25000000 \
-          --shipping-amount 4500000 >/dev/null
+          --shipping-amount 4500000 \
+          --quantity 1 >/dev/null
         assert_balance "$VAULT" 29.5 "vault after 1st deposit"
         assert_balance "$BUYER_ATA" 970.5 "buyer after 1st deposit"
 
@@ -142,7 +147,8 @@ tasks:
           --buyer-keypair "$BUYER_KEYPAIR" \
           --buyer-ata "$BUYER_ATA" \
           --product-amount 10000000 \
-          --shipping-amount 0 >/dev/null
+          --shipping-amount 0 \
+          --quantity 1 >/dev/null
         assert_balance "$VAULT" 39.5 "vault after top-up"
         assert_balance "$BUYER_ATA" 960.5 "buyer after top-up"
 

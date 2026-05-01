@@ -44,3 +44,5 @@ target/
 # Trunk
 .trunk/
 .tmp/
+packages/frontend/landing/src/wallet/phantom_bridge.generated.js
+packages/frontend/landing/assets/solana-deployments.json

@@ -1,5 +1,10 @@
 {
   "devDependencies": {
+    "@solana/web3.js": "^1.98.4",
+    "esbuild": "^0.25.11",
     "wrangler": "^4.73.0"
+  },
+  "scripts": {
+    "build:landing-wallet": "esbuild packages/frontend/landing/js/phantom_bridge.entry.js --bundle --format=esm --platform=browser --target=es2020 --outfile=packages/frontend/landing/src/wallet/phantom_bridge.generated.js"
   }
 }

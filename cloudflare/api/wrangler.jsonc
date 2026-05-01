@@ -71,6 +71,14 @@
       "new_sqlite_classes": ["AuthTokenRefreshDo", "AuthTokenOnceDo"],
     },
   ],
+  // Periodic batch recycling. The scheduled handler in lib.rs sweeps
+  // open batches, advances any whose on-chain pool has auto-locked, and
+  // opens the successor batch. Runs every minute — on-chain auto-lock
+  // is the trigger, so users only see ~1 minute of latency between
+  // threshold-hit and the next batch being available for deposits.
+  "triggers": {
+    "crons": ["* * * * *"],
+  },
   "observability": {
     "enabled": true,
     "logs": {

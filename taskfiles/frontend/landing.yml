@@ -9,13 +9,25 @@ vars:
   PATH_TRUNK_DIST_LANDING: '{{joinPath .PATH_TRUNK_DIST "landing"}}'
 
 tasks:
+  prepare-wallet-bridge:
+    internal: true
+    cmds:
+      - npm run build:landing-wallet
+
+  prepare-solana-config:
+    internal: true
+    cmds:
+      - task solana-programs:write-frontend-config
+
   build:
     desc: "Build the landing page for production"
+    deps: ["prepare-wallet-bridge", "prepare-solana-config"]
     dir: "{{.PATH_PACKAGE_LANDING}}"
     env:
       URL_API: "${URL_API_PROD}"
       URL_MEDIA: "/media"
       URL_ADMIN: "${URL_ADMIN_PROD}"
+      SOLANA_NETWORK: "{{.SOLANA_NETWORK_ACTIVE}}"
     cmds:
       - >
         NO_COLOR=true trunk build
@@ -25,7 +37,9 @@ tasks:
 
   dev:
     desc: "Run the landing page in development mode"
-    deps: ["dev-trunk", "dev-media"]
+    deps: ["prepare-wallet-bridge", "prepare-solana-config", "dev-trunk", "dev-media"]
+    cmds:
+      - task solana-programs:bootstrap-local
 
   dev-trunk:
     internal: true
@@ -34,9 +48,11 @@ tasks:
       URL_API: "{{.URL_API_DEV}}"
       URL_MEDIA: "{{.URL_LANDING_MEDIA_DEV}}"
       URL_ADMIN: "{{.URL_ADMIN_DEV}}"
+      SOLANA_NETWORK: "{{.SOLANA_NETWORK_ACTIVE}}"
     cmds:
       - >
         NO_COLOR=true trunk serve
+        --poll
         --port {{.PORT_LANDING_DEV}}
         --dist "{{.PATH_TRUNK_DIST_LANDING}}"
         --watch "{{.PATH_PACKAGE_FRONTEND_SHARED}}"

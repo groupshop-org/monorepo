@@ -16,3 +16,9 @@ tasks:
         --rpc-port {{.PORT_SOLANA_VALIDTOR_DEV_RPC}}
         --faucet-port {{.PORT_SOLANA_VALIDTOR_DEV_FAUCET}}
         --gossip-port {{.PORT_SOLANA_VALIDTOR_DEV_GOSSIP}}
+
+  fund:
+    desc: "Fund a wallet on the local Solana validator"
+    cmds:
+      - >
+        solana airdrop 1000 --url http://localhost:{{.PORT_SOLANA_VALIDTOR_DEV_RPC}} {{.SOLANA_WALLET_DEV}}

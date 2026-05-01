@@ -5,7 +5,7 @@ use crate::errors::MarketError;
 /// Tag byte at offset 0 of each instruction's data buffer.
 #[repr(u8)]
 pub enum MarketIx {
-    /// Data: `[u8; 32] product_hash, u8 pool_bump, u8 vault_bump`
+    /// Data: `[u8; 32] product_hash, u8 pool_bump, u8 vault_bump, u32 batch_id, u32 threshold`
     /// Accounts: authority, pool, vault, usdc_mint, system_program, token_program
     InitializePool = 0,
 
@@ -29,6 +29,14 @@ pub enum MarketIx {
     /// Data: `[u8; 32] user_id`
     /// Accounts: authority, pool, participation, vault, destination_ata, token_program
     ClaimRefund = 5,
+
+    /// Buyer-initiated refund while the pool is still Open. Authority
+    /// co-signs the message but the buyer is the principal signer; refund
+    /// goes to the buyer's USDC ATA.
+    ///
+    /// Data: empty
+    /// Accounts: buyer, authority, pool, participation, vault, buyer_usdc_ata, token_program
+    SelfRefund = 6,
 }
 
 impl MarketIx {
@@ -41,6 +49,7 @@ impl MarketIx {
             3 => Ok(Self::Release),
             4 => Ok(Self::EnterRefundMode),
             5 => Ok(Self::ClaimRefund),
+            6 => Ok(Self::SelfRefund),
             _ => Err(MarketError::InvalidInstruction.into()),
         }
     }
@@ -68,6 +77,12 @@ pub fn read_array<const N: usize>(
 pub fn read_u8(data: &[u8], cursor: &mut usize) -> Result<u8, ProgramError> {
     let arr: [u8; 1] = read_array(data, cursor)?;
     Ok(arr[0])
+}
+
+#[inline]
+pub fn read_u32(data: &[u8], cursor: &mut usize) -> Result<u32, ProgramError> {
+    let arr: [u8; 4] = read_array(data, cursor)?;
+    Ok(u32::from_le_bytes(arr))
 }
 
 #[inline]
