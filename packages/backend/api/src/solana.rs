@@ -168,12 +168,6 @@ pub fn verify_wallet_signature(
     Ok(())
 }
 
-pub fn authority_signature_base64(cfg: &SolanaConfig, message: &[u8]) -> ApiResult<String> {
-    let signing = signing_key_from_config(cfg)?;
-    let signature = signing.sign(message);
-    Ok(base64::engine::general_purpose::STANDARD.encode(signature.to_bytes()))
-}
-
 pub fn decode_blockhash(value: &str) -> ApiResult<[u8; 32]> {
     Pubkey::from_base58(value).map(|value| value.to_bytes())
 }
@@ -478,6 +472,346 @@ pub fn transaction_bytes(signatures: &[Vec<u8>], message: &[u8]) -> Vec<u8> {
     }
     tx.extend_from_slice(message);
     tx
+}
+
+pub fn authority_sign_deposit_transaction(
+    cfg: &SolanaConfig,
+    signed_tx_bytes: &[u8],
+    recipe: &DepositRecipe,
+) -> ApiResult<Vec<u8>> {
+    let parsed = parse_transaction_bytes(signed_tx_bytes)?;
+    let message = parse_legacy_message(&parsed.message)?;
+    validate_deposit_message(&message, recipe)?;
+    authority_sign_parsed_transaction(cfg, parsed, &recipe.buyer, &recipe.authority)
+}
+
+pub fn authority_sign_self_refund_transaction(
+    cfg: &SolanaConfig,
+    signed_tx_bytes: &[u8],
+    recipe: &SelfRefundRecipe,
+) -> ApiResult<Vec<u8>> {
+    let parsed = parse_transaction_bytes(signed_tx_bytes)?;
+    let message = parse_legacy_message(&parsed.message)?;
+    validate_self_refund_message(&message, recipe)?;
+    authority_sign_parsed_transaction(cfg, parsed, &recipe.buyer, &recipe.authority)
+}
+
+fn authority_sign_parsed_transaction(
+    cfg: &SolanaConfig,
+    parsed: ParsedTransaction,
+    expected_buyer: &Pubkey,
+    expected_authority: &Pubkey,
+) -> ApiResult<Vec<u8>> {
+    let message = parse_legacy_message(&parsed.message)?;
+    if message.num_required_signatures != 2 {
+        return Err(ApiError::Validation(format!(
+            "expected 2 required signatures, got {}",
+            message.num_required_signatures
+        )));
+    }
+    if message.account_keys.first() != Some(expected_buyer) {
+        return Err(ApiError::Validation(
+            "signed transaction fee payer is not the approved buyer".to_string(),
+        ));
+    }
+    if message.account_keys.get(1) != Some(expected_authority) {
+        return Err(ApiError::Validation(
+            "signed transaction authority signer is not approved".to_string(),
+        ));
+    }
+    if parsed.signatures.len() != usize::from(message.num_required_signatures) {
+        return Err(ApiError::Validation(format!(
+            "expected {} transaction signatures, got {}",
+            message.num_required_signatures,
+            parsed.signatures.len()
+        )));
+    }
+    if parsed.signatures[0] == SIGNATURE_PLACEHOLDER {
+        return Err(ApiError::Validation(
+            "buyer signature is missing from transaction".to_string(),
+        ));
+    }
+
+    let buyer_verifying_key = VerifyingKey::from_bytes(expected_buyer.as_ref())
+        .map_err(|err| ApiError::Validation(format!("invalid buyer public key: {err}")))?;
+    let buyer_signature = Signature::from_slice(&parsed.signatures[0])
+        .map_err(|err| ApiError::Validation(format!("invalid buyer signature bytes: {err}")))?;
+    buyer_verifying_key
+        .verify(&parsed.message, &buyer_signature)
+        .map_err(|err| {
+            ApiError::Validation(format!("buyer transaction signature failed: {err}"))
+        })?;
+
+    let authority_signature = signing_key_from_config(cfg)?.sign(&parsed.message);
+    Ok(transaction_bytes(
+        &[
+            parsed.signatures[0].to_vec(),
+            authority_signature.to_bytes().to_vec(),
+        ],
+        &parsed.message,
+    ))
+}
+
+fn validate_deposit_message(
+    message: &ParsedLegacyMessage,
+    recipe: &DepositRecipe,
+) -> ApiResult<()> {
+    let mut data = Vec::with_capacity(1 + 32 + 1 + 8 + 8 + 8);
+    data.push(TAG_DEPOSIT);
+    data.extend_from_slice(&recipe.user_id.inner());
+    data.push(recipe.participation_bump);
+    data.extend_from_slice(&recipe.product_amount.to_le_bytes());
+    data.extend_from_slice(&recipe.shipping_amount.to_le_bytes());
+    data.extend_from_slice(&recipe.quantity.to_le_bytes());
+
+    validate_single_program_instruction(
+        message,
+        &recipe.program_id,
+        &[
+            recipe.buyer,
+            recipe.authority,
+            recipe.pool,
+            recipe.participation,
+            recipe.vault,
+            recipe.buyer_ata,
+            recipe.usdc_mint,
+            system_program_id(),
+            token_program_id(),
+        ],
+        &data,
+    )
+}
+
+fn validate_self_refund_message(
+    message: &ParsedLegacyMessage,
+    recipe: &SelfRefundRecipe,
+) -> ApiResult<()> {
+    validate_single_program_instruction(
+        message,
+        &recipe.program_id,
+        &[
+            recipe.buyer,
+            recipe.authority,
+            recipe.pool,
+            recipe.participation,
+            recipe.vault,
+            recipe.buyer_ata,
+            token_program_id(),
+        ],
+        &[TAG_SELF_REFUND],
+    )
+}
+
+fn validate_single_program_instruction(
+    message: &ParsedLegacyMessage,
+    program_id: &Pubkey,
+    expected_accounts: &[Pubkey],
+    expected_data: &[u8],
+) -> ApiResult<()> {
+    // Phantom injects compute-budget instructions at signing time, so the
+    // total instruction count may be > 1. Find the one targeting our program.
+    let mut found: Option<&ParsedCompiledInstruction> = None;
+    for ix in &message.instructions {
+        let ix_program = message
+            .account_keys
+            .get(usize::from(ix.program_id_index))
+            .ok_or_else(|| {
+                ApiError::Validation("instruction program index out of bounds".to_string())
+            })?;
+        if ix_program == program_id {
+            if found.is_some() {
+                return Err(ApiError::Validation(
+                    "transaction contains multiple escrow instructions".to_string(),
+                ));
+            }
+            found = Some(ix);
+        }
+    }
+    let ix = found.ok_or_else(|| {
+        ApiError::Validation("signed transaction targets the wrong escrow program".to_string())
+    })?;
+    if ix.data != expected_data {
+        return Err(ApiError::Validation(
+            "signed transaction escrow instruction data was modified".to_string(),
+        ));
+    }
+    if ix.account_indices.len() != expected_accounts.len() {
+        return Err(ApiError::Validation(format!(
+            "expected {} escrow accounts, got {}",
+            expected_accounts.len(),
+            ix.account_indices.len()
+        )));
+    }
+
+    for (position, (actual_index, expected_key)) in ix
+        .account_indices
+        .iter()
+        .zip(expected_accounts.iter())
+        .enumerate()
+    {
+        let actual_key = message
+            .account_keys
+            .get(usize::from(*actual_index))
+            .ok_or_else(|| {
+                ApiError::Validation("instruction account index out of bounds".to_string())
+            })?;
+        if actual_key != expected_key {
+            return Err(ApiError::Validation(format!(
+                "escrow instruction account {position} does not match the approved transaction"
+            )));
+        }
+    }
+
+    Ok(())
+}
+
+struct ParsedTransaction {
+    signatures: Vec<[u8; 64]>,
+    message: Vec<u8>,
+}
+
+struct ParsedLegacyMessage {
+    num_required_signatures: u8,
+    account_keys: Vec<Pubkey>,
+    instructions: Vec<ParsedCompiledInstruction>,
+}
+
+struct ParsedCompiledInstruction {
+    program_id_index: u8,
+    account_indices: Vec<u8>,
+    data: Vec<u8>,
+}
+
+fn parse_transaction_bytes(bytes: &[u8]) -> ApiResult<ParsedTransaction> {
+    let mut cursor = 0usize;
+    let signature_count = decode_shortvec(bytes, &mut cursor)?;
+    let signatures_len = signature_count
+        .checked_mul(64)
+        .ok_or_else(|| ApiError::Validation("transaction signature length overflow".to_string()))?;
+    let end = cursor
+        .checked_add(signatures_len)
+        .ok_or_else(|| ApiError::Validation("transaction signature length overflow".to_string()))?;
+    if end > bytes.len() {
+        return Err(ApiError::Validation(
+            "transaction is shorter than its signature section".to_string(),
+        ));
+    }
+
+    let mut signatures = Vec::with_capacity(signature_count);
+    for chunk in bytes[cursor..end].chunks_exact(64) {
+        let mut signature = [0u8; 64];
+        signature.copy_from_slice(chunk);
+        signatures.push(signature);
+    }
+
+    Ok(ParsedTransaction {
+        signatures,
+        message: bytes[end..].to_vec(),
+    })
+}
+
+fn parse_legacy_message(bytes: &[u8]) -> ApiResult<ParsedLegacyMessage> {
+    let mut cursor = 0usize;
+    let num_required_signatures = read_u8_from_bytes(bytes, &mut cursor)?;
+    let _num_readonly_signed_accounts = read_u8_from_bytes(bytes, &mut cursor)?;
+    let _num_readonly_unsigned_accounts = read_u8_from_bytes(bytes, &mut cursor)?;
+
+    let account_key_count = decode_shortvec(bytes, &mut cursor)?;
+    let mut account_keys = Vec::with_capacity(account_key_count);
+    for _ in 0..account_key_count {
+        account_keys.push(Pubkey::from_bytes(read_32_from_bytes(bytes, &mut cursor)?));
+    }
+
+    let _recent_blockhash = read_32_from_bytes(bytes, &mut cursor)?;
+    let instruction_count = decode_shortvec(bytes, &mut cursor)?;
+    let mut instructions = Vec::with_capacity(instruction_count);
+
+    for _ in 0..instruction_count {
+        let program_id_index = read_u8_from_bytes(bytes, &mut cursor)?;
+        let account_count = decode_shortvec(bytes, &mut cursor)?;
+        let account_indices = read_vec_from_bytes(bytes, &mut cursor, account_count)?;
+        let data_len = decode_shortvec(bytes, &mut cursor)?;
+        let data = read_vec_from_bytes(bytes, &mut cursor, data_len)?;
+        instructions.push(ParsedCompiledInstruction {
+            program_id_index,
+            account_indices,
+            data,
+        });
+    }
+
+    if cursor != bytes.len() {
+        return Err(ApiError::Validation(
+            "legacy transaction message has trailing bytes".to_string(),
+        ));
+    }
+
+    Ok(ParsedLegacyMessage {
+        num_required_signatures,
+        account_keys,
+        instructions,
+    })
+}
+
+fn read_u8_from_bytes(bytes: &[u8], cursor: &mut usize) -> ApiResult<u8> {
+    let Some(value) = bytes.get(*cursor).copied() else {
+        return Err(ApiError::Validation(
+            "transaction message ended unexpectedly".to_string(),
+        ));
+    };
+    *cursor += 1;
+    Ok(value)
+}
+
+fn read_32_from_bytes(bytes: &[u8], cursor: &mut usize) -> ApiResult<[u8; 32]> {
+    let end = cursor
+        .checked_add(32)
+        .ok_or_else(|| ApiError::Validation("transaction message offset overflow".to_string()))?;
+    let slice = bytes.get(*cursor..end).ok_or_else(|| {
+        ApiError::Validation("transaction message ended unexpectedly".to_string())
+    })?;
+    let mut out = [0u8; 32];
+    out.copy_from_slice(slice);
+    *cursor = end;
+    Ok(out)
+}
+
+fn read_vec_from_bytes(bytes: &[u8], cursor: &mut usize, len: usize) -> ApiResult<Vec<u8>> {
+    let end = cursor
+        .checked_add(len)
+        .ok_or_else(|| ApiError::Validation("transaction message offset overflow".to_string()))?;
+    let slice = bytes.get(*cursor..end).ok_or_else(|| {
+        ApiError::Validation("transaction message ended unexpectedly".to_string())
+    })?;
+    *cursor = end;
+    Ok(slice.to_vec())
+}
+
+fn decode_shortvec(bytes: &[u8], cursor: &mut usize) -> ApiResult<usize> {
+    let mut result = 0usize;
+    let mut shift = 0usize;
+
+    loop {
+        let Some(byte) = bytes.get(*cursor).copied() else {
+            return Err(ApiError::Validation(
+                "shortvec ended before value completed".to_string(),
+            ));
+        };
+        *cursor += 1;
+
+        let value = usize::from(byte & 0x7f);
+        result |= value
+            .checked_shl(shift as u32)
+            .ok_or_else(|| ApiError::Validation("shortvec value overflow".to_string()))?;
+
+        if byte & 0x80 == 0 {
+            return Ok(result);
+        }
+
+        shift += 7;
+        if shift >= usize::BITS as usize {
+            return Err(ApiError::Validation("shortvec value overflow".to_string()));
+        }
+    }
 }
 
 pub async fn rpc_get_latest_blockhash(ctx: &ApiContext) -> ApiResult<String> {

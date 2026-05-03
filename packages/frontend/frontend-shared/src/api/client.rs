@@ -268,6 +268,14 @@ impl ApiClient {
             .await
     }
 
+    pub async fn account_escrow_deposit_submit(
+        &self,
+        req: &AccountEscrowDepositSubmitRequest,
+    ) -> FrontendResult<AccountEscrowTransactionSubmitResponse> {
+        self.api_request_response::<AccountEscrowDepositSubmitRoute>(req)
+            .await
+    }
+
     pub async fn account_escrow_deposit_confirm(
         &self,
         req: &AccountEscrowDepositConfirmRequest,
@@ -281,6 +289,14 @@ impl ApiClient {
         req: &AccountEscrowRefundBuildRequest,
     ) -> FrontendResult<AccountEscrowRefundBuildResponse> {
         self.api_request_response::<AccountEscrowRefundBuildRoute>(req)
+            .await
+    }
+
+    pub async fn account_escrow_refund_submit(
+        &self,
+        req: &AccountEscrowRefundSubmitRequest,
+    ) -> FrontendResult<AccountEscrowTransactionSubmitResponse> {
+        self.api_request_response::<AccountEscrowRefundSubmitRoute>(req)
             .await
     }
 

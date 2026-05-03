@@ -24,6 +24,16 @@ impl ApiRouteRequestResponse for AccountEscrowDepositBuildRoute {
     const METHOD: Method = Method::POST;
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct AccountEscrowDepositSubmitRoute;
+
+impl ApiRouteRequestResponse for AccountEscrowDepositSubmitRoute {
+    const ROUTE: ApiRoute = ApiRoute::Account(crate::route::ApiAccountRoute::EscrowDepositSubmit);
+    type Req = AccountEscrowDepositSubmitRequest;
+    type Res = AccountEscrowTransactionSubmitResponse;
+    const METHOD: Method = Method::POST;
+}
+
 /// Called by the client after Phantom successfully submits the deposit
 /// transaction. The server independently verifies the deposit by reading the
 /// on-chain Participation PDA (the source of truth) and then mirrors the
@@ -59,9 +69,8 @@ pub struct AccountEscrowDepositConfirmResponse {
 // -- Self-refund (withdraw while pool is still Open) ----------------------
 
 /// First leg of the self-refund: returns the fully-built transaction
-/// bytes (authority slot pre-signed, buyer slot empty) for Phantom to sign
-/// and submit. Same shape as deposit-build so the client can reuse the
-/// existing Transaction.from() round-trip.
+/// bytes (authority and buyer slots empty) for Phantom to sign first. The
+/// backend adds the authority signature and submits in a follow-up call.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AccountEscrowRefundBuildRoute;
 
@@ -69,6 +78,16 @@ impl ApiRouteRequestResponse for AccountEscrowRefundBuildRoute {
     const ROUTE: ApiRoute = ApiRoute::Account(crate::route::ApiAccountRoute::EscrowRefundBuild);
     type Req = AccountEscrowRefundBuildRequest;
     type Res = AccountEscrowRefundBuildResponse;
+    const METHOD: Method = Method::POST;
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct AccountEscrowRefundSubmitRoute;
+
+impl ApiRouteRequestResponse for AccountEscrowRefundSubmitRoute {
+    const ROUTE: ApiRoute = ApiRoute::Account(crate::route::ApiAccountRoute::EscrowRefundSubmit);
+    type Req = AccountEscrowRefundSubmitRequest;
+    type Res = AccountEscrowTransactionSubmitResponse;
     const METHOD: Method = Method::POST;
 }
 
@@ -91,13 +110,14 @@ pub struct AccountEscrowRefundBuildResponse {
     pub authority_address: String,
     pub wallet_address: String,
     pub batch_id: u32,
+    pub recent_blockhash: String,
     pub buyer_associated_token_account: String,
     pub product_amount_base_units: u64,
     pub shipping_amount_base_units: u64,
     pub total_amount_base_units: u64,
-    /// Full Solana transaction bytes (base64) — buyer slot zero-filled,
-    /// authority slot pre-signed. Client uses `Transaction.from()` to
-    /// preserve the message bytes through Phantom signing.
+    /// Full Solana transaction bytes (base64) with signer slots zero-filled.
+    /// Client uses `Transaction.from()` to preserve the message bytes through
+    /// Phantom signing.
     pub transaction_base64: String,
 }
 
@@ -147,6 +167,27 @@ pub struct AccountEscrowDepositBuildRequest {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct AccountEscrowDepositSubmitRequest {
+    pub proof_token: String,
+    pub recent_blockhash: String,
+    pub signed_transaction_base64: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct AccountEscrowRefundSubmitRequest {
+    pub product_id: ProductId,
+    pub wallet_address: String,
+    pub batch_id: u32,
+    pub recent_blockhash: String,
+    pub signed_transaction_base64: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct AccountEscrowTransactionSubmitResponse {
+    pub tx_signature: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AccountEscrowDepositIntentResponse {
     pub network: String,
     pub rpc_url: String,
@@ -186,12 +227,9 @@ pub struct AccountEscrowDepositBuildResponse {
     pub vault_address: String,
     pub participation_address: String,
     pub participation_bump: u8,
-    pub authority_signature_base64: String,
     /// The full Solana transaction bytes (base64 encoded) with the authority
-    /// signature already populated and a zero-filled placeholder for the
-    /// buyer signature. The client deserializes this directly via
-    /// `Transaction.from(bytes)` so the message bytes the authority signed
-    /// are preserved verbatim through Phantom signing and on-chain submission.
+    /// and buyer signature slots zero-filled. Phantom signs the buyer slot
+    /// first, then the backend adds the authority signature and submits.
     pub transaction_base64: String,
     pub batch_id: u32,
 }
