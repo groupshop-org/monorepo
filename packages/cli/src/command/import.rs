@@ -153,7 +153,10 @@ pub async fn run(
     // 1c. Filter out placeholder/missing images
     {
         let before = rows.len();
-        rows.retain(|row| !row.image_url.contains("6f37ced36498c7df3a3897a9dbbb3384.jpg"));
+        rows.retain(|row| {
+            !row.image_url
+                .contains("6f37ced36498c7df3a3897a9dbbb3384.jpg")
+        });
         let removed = before - rows.len();
         if removed > 0 {
             println!(

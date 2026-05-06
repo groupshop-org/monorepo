@@ -42,11 +42,21 @@ export async function phantomSignMessage(message) {
   return bytesToBase64(signature);
 }
 
-/// Buyer-initiated refund. Same shape as deposit: backend pre-attaches
-/// the authority signature and ships full transaction bytes; we
-/// `Transaction.from()` to preserve the message and let Phantom sign
-/// the buyer slot.
-export async function phantomSignAndSendEscrowRefund(payloadJson) {
+async function simulateBeforeWalletSignature(connection, transaction) {
+  // Legacy `Transaction` uses the deprecated overload:
+  // simulateTransaction(transaction, signers?, includeAccounts?). Passing the
+  // VersionedTransaction config object throws "Invalid arguments" in web3.js.
+  // With no signers, web3.js submits the simulation with sigVerify disabled.
+  const result = await connection.simulateTransaction(transaction);
+  if (result.value.err) {
+    throw new Error(`Escrow transaction simulation failed: ${JSON.stringify(result.value.err)}`);
+  }
+}
+
+/// Buyer-initiated refund. The backend ships transaction bytes with both
+/// signature slots empty; Phantom signs the buyer slot first, then Rust sends
+/// the partially signed bytes back to the backend for authority signing.
+export async function phantomSignEscrowRefundTransaction(payloadJson) {
   const payload = JSON.parse(payloadJson);
   const provider = getProvider();
   const connectionKey = await provider.connect();
@@ -58,15 +68,17 @@ export async function phantomSignAndSendEscrowRefund(payloadJson) {
   }
 
   const transaction = Transaction.from(base64ToBytes(payload.transaction_base64));
+  await simulateBeforeWalletSignature(connection, transaction);
   const signedTransaction = await provider.signTransaction(transaction);
-  const signature = await connection.sendRawTransaction(signedTransaction.serialize(), {
-    preflightCommitment: "confirmed",
-  });
-  await connection.confirmTransaction(signature, "confirmed");
-  return signature;
+  return bytesToBase64(
+    signedTransaction.serialize({
+      requireAllSignatures: false,
+      verifySignatures: false,
+    }),
+  );
 }
 
-export async function phantomSignAndSendEscrowDeposit(payloadJson) {
+export async function phantomSignEscrowDepositTransaction(payloadJson) {
   const payload = JSON.parse(payloadJson);
   const provider = getProvider();
   const connectionKey = await provider.connect();
@@ -99,16 +111,16 @@ export async function phantomSignAndSendEscrowDeposit(payloadJson) {
   }
 
   // Deserialize the backend-built transaction directly. Transaction.from()
-  // populates the cached internal `_message`, so when Phantom serializes the
-  // transaction during signing it reuses the exact bytes the authority signed
-  // — no re-compilation, no signature mismatch.
+  // preserves the exact message bytes the backend approved, so Phantom signs
+  // the buyer slot without recompiling or reordering accounts.
   const transaction = Transaction.from(base64ToBytes(payload.transaction_base64));
 
+  await simulateBeforeWalletSignature(connection, transaction);
   const signedTransaction = await provider.signTransaction(transaction);
-
-  const signature = await connection.sendRawTransaction(signedTransaction.serialize(), {
-    preflightCommitment: "confirmed",
-  });
-  await connection.confirmTransaction(signature, "confirmed");
-  return signature;
+  return bytesToBase64(
+    signedTransaction.serialize({
+      requireAllSignatures: false,
+      verifySignatures: false,
+    }),
+  );
 }

@@ -253,6 +253,11 @@ async fn handle_route(
                     .await?
                     .boxed())
             }
+            ApiAccountRoute::EscrowDepositSubmit => {
+                Ok(account::escrow::handle_escrow_deposit_submit(ctx, req)
+                    .await?
+                    .boxed())
+            }
             ApiAccountRoute::EscrowDepositConfirm => {
                 Ok(account::escrow::handle_escrow_deposit_confirm(ctx, req)
                     .await?
@@ -260,6 +265,11 @@ async fn handle_route(
             }
             ApiAccountRoute::EscrowRefundBuild => {
                 Ok(account::escrow::handle_escrow_refund_build(ctx, req)
+                    .await?
+                    .boxed())
+            }
+            ApiAccountRoute::EscrowRefundSubmit => {
+                Ok(account::escrow::handle_escrow_refund_submit(ctx, req)
                     .await?
                     .boxed())
             }

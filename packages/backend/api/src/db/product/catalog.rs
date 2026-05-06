@@ -251,12 +251,24 @@ impl ProductCatalogDb {
 
     pub async fn delete_all(ctx: &ApiContext) -> ApiResult<()> {
         let db = get_d1(&ctx.env)?;
-        db_execute(db_prepare(&db, format!("DELETE FROM {SQL_TABLE_PRODUCT_CATALOG}"), &[])?)
-            .await?;
-        db_execute(db_prepare(&db, format!("DELETE FROM {SQL_TABLE_PRODUCT_BRAND}"), &[])?)
-            .await?;
-        db_execute(db_prepare(&db, format!("DELETE FROM {SQL_TABLE_PRODUCT_CATEGORY}"), &[])?)
-            .await
+        db_execute(db_prepare(
+            &db,
+            format!("DELETE FROM {SQL_TABLE_PRODUCT_CATALOG}"),
+            &[],
+        )?)
+        .await?;
+        db_execute(db_prepare(
+            &db,
+            format!("DELETE FROM {SQL_TABLE_PRODUCT_BRAND}"),
+            &[],
+        )?)
+        .await?;
+        db_execute(db_prepare(
+            &db,
+            format!("DELETE FROM {SQL_TABLE_PRODUCT_CATEGORY}"),
+            &[],
+        )?)
+        .await
     }
 }
 

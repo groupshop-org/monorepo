@@ -3,7 +3,8 @@ use futures_signals::signal::{Mutable, SignalExt};
 use gloo_net::http::Request;
 use groupshop_backend_shared::prelude::{
     AccountEscrowDepositBuildRequest, AccountEscrowDepositBuildResponse,
-    AccountEscrowDepositConfirmRequest, AccountEscrowDepositIntentRequest, ProductSummary,
+    AccountEscrowDepositConfirmRequest, AccountEscrowDepositIntentRequest,
+    AccountEscrowDepositSubmitRequest, ProductSummary,
 };
 use groupshop_frontend_shared::{
     error::{FrontendError, FrontendResult},
@@ -40,6 +41,12 @@ enum DepositAction {
     Submitted(String),
 }
 
+#[derive(Clone)]
+enum SuccessMessage {
+    Text(String),
+    Transaction { signature: String, url: String },
+}
+
 #[wasm_bindgen(module = "/src/wallet/phantom_bridge.generated.js")]
 extern "C" {
     #[wasm_bindgen(js_name = phantomIsAvailable)]
@@ -51,13 +58,13 @@ extern "C" {
     #[wasm_bindgen(catch, js_name = phantomSignMessage)]
     async fn phantom_sign_message_js(message: String) -> Result<JsValue, JsValue>;
 
-    #[wasm_bindgen(catch, js_name = phantomSignAndSendEscrowDeposit)]
-    async fn phantom_sign_and_send_escrow_deposit_js(
+    #[wasm_bindgen(catch, js_name = phantomSignEscrowDepositTransaction)]
+    async fn phantom_sign_escrow_deposit_transaction_js(
         payload_json: String,
     ) -> Result<JsValue, JsValue>;
 
-    #[wasm_bindgen(catch, js_name = phantomSignAndSendEscrowRefund)]
-    async fn phantom_sign_and_send_escrow_refund_js(
+    #[wasm_bindgen(catch, js_name = phantomSignEscrowRefundTransaction)]
+    async fn phantom_sign_escrow_refund_transaction_js(
         payload_json: String,
     ) -> Result<JsValue, JsValue>;
 }
@@ -67,7 +74,7 @@ pub fn render_deposit_panel(product: ProductSummary, committed_units: Mutable<u6
     let wallet_address = Mutable::new(None::<String>);
     let working = Mutable::new(false);
     let error = Mutable::new(None::<String>);
-    let success = Mutable::new(None::<String>);
+    let success = Mutable::new(None::<SuccessMessage>);
     // Buyer-chosen quantity. Defaults to 1 — the smallest commitment
     // that still helps the deal trigger. Users can crank it up to be
     // the entire batch's worth on their own if they want.
@@ -165,7 +172,7 @@ pub fn render_deposit_panel(product: ProductSummary, committed_units: Mutable<u6
                 .style_signal("display", success.signal_cloned().map(|value| {
                     if value.is_some() { "block".to_string() } else { "none".to_string() }
                 }))
-                .text_signal(success.signal_cloned().map(|value| value.unwrap_or_default()))
+                .child_signal(success.signal_cloned().map(render_success_message))
             }),
             html!("button", {
                 .class(&*chrome::BUTTON)
@@ -227,10 +234,10 @@ pub fn render_deposit_panel(product: ProductSummary, committed_units: Mutable<u6
                                 None => {
                                     let wallet = phantom_connect().await?;
                                     wallet_address.set(Some(wallet.clone()));
-                                    success.set(Some(format!(
+                                    success.set(Some(SuccessMessage::Text(format!(
                                         "Connected wallet: {}. Click again to deposit.",
                                         shorten_wallet(&wallet)
-                                    )));
+                                    ))));
                                     return Ok::<DepositAction, FrontendError>(DepositAction::Connected);
                                 }
                             };
@@ -247,18 +254,28 @@ pub fn render_deposit_panel(product: ProductSummary, committed_units: Mutable<u6
 
                             validate_intent_against_manifest(&intent, &manifest_cfg)?;
 
+                            let proof_token = intent.proof_token.clone();
                             let wallet_signature = phantom_sign_message(intent.challenge_message).await?;
                             let build = ApiCtx::get()
                                 .client
                                 .account_escrow_deposit_build(&AccountEscrowDepositBuildRequest {
-                                    proof_token: intent.proof_token,
+                                    proof_token: proof_token.clone(),
                                     wallet_signature_base64: wallet_signature,
                                 })
                                 .await?;
 
                             validate_build_against_manifest(&build, &manifest_cfg)?;
 
-                            let tx_signature = phantom_sign_and_send(build).await?;
+                            let signed_transaction_base64 = phantom_sign_deposit_transaction(build.clone()).await?;
+                            let submit = ApiCtx::get()
+                                .client
+                                .account_escrow_deposit_submit(&AccountEscrowDepositSubmitRequest {
+                                    proof_token,
+                                    recent_blockhash: build.recent_blockhash,
+                                    signed_transaction_base64,
+                                })
+                                .await?;
+                            let tx_signature = submit.tx_signature;
 
                             // Tell the backend the deposit landed so it can
                             // mirror the on-chain Participation into D1.
@@ -290,7 +307,10 @@ pub fn render_deposit_panel(product: ProductSummary, committed_units: Mutable<u6
                         match run {
                             Ok(DepositAction::Connected) => {}
                             Ok(DepositAction::Submitted(signature)) => {
-                                success.set(Some(format!("Deposit submitted. Transaction signature: {signature}")));
+                                success.set(Some(SuccessMessage::Transaction {
+                                    url: solscan_tx_url(config::solana_network(), &signature),
+                                    signature,
+                                }));
                             }
                             Err(err) => {
                                 error.set(Some(err.to_string()));
@@ -368,24 +388,27 @@ async fn phantom_sign_message(message: String) -> FrontendResult<String> {
     })
 }
 
-async fn phantom_sign_and_send(build: AccountEscrowDepositBuildResponse) -> FrontendResult<String> {
+async fn phantom_sign_deposit_transaction(
+    build: AccountEscrowDepositBuildResponse,
+) -> FrontendResult<String> {
     let payload = serde_json::to_string(&build)
         .map_err(|err| FrontendError::Other(format!("failed to encode wallet payload: {err}")))?;
-    let value = phantom_sign_and_send_escrow_deposit_js(payload)
+    let value = phantom_sign_escrow_deposit_transaction_js(payload)
         .await
         .map_err(js_error)?;
     value.as_string().ok_or_else(|| {
         FrontendError::Other(
-            "Phantom signAndSendTransaction returned a non-string signature".to_string(),
+            "Phantom signTransaction returned a non-string transaction".to_string(),
         )
     })
 }
 
 /// Run the buyer-initiated refund end-to-end. Used by the My Orders
 /// "Withdraw" button. Steps:
-///   1. Backend builds the SelfRefund transaction (authority pre-signed).
-///   2. Phantom signs as buyer + submits.
-///   3. Backend confirms by reading on-chain `Participation.refunded`
+///   1. Backend builds the SelfRefund transaction with empty signer slots.
+///   2. Phantom signs as buyer.
+///   3. Backend adds the authority signature and submits.
+///   4. Backend confirms by reading on-chain `Participation.refunded`
 ///      and mirrors the flag into D1.
 /// Returns the transaction signature on success so the caller can show
 /// it in the UI (matches the deposit UX).
@@ -405,7 +428,7 @@ pub async fn run_self_refund(
         .account_escrow_refund_build(
             &groupshop_backend_shared::prelude::AccountEscrowRefundBuildRequest {
                 product_id: product_id.clone(),
-                wallet_address: wallet,
+                wallet_address: wallet.clone(),
                 batch_id,
             },
         )
@@ -413,13 +436,26 @@ pub async fn run_self_refund(
 
     let payload = serde_json::to_string(&build)
         .map_err(|err| FrontendError::Other(format!("failed to encode refund payload: {err}")))?;
-    let signature = phantom_sign_and_send_escrow_refund_js(payload)
+    let signed_transaction_base64 = phantom_sign_escrow_refund_transaction_js(payload)
         .await
         .map_err(js_error)?
         .as_string()
         .ok_or_else(|| {
-            FrontendError::Other("Phantom refund returned a non-string signature".to_string())
+            FrontendError::Other("Phantom refund returned a non-string transaction".to_string())
         })?;
+    let submit = ApiCtx::get()
+        .client
+        .account_escrow_refund_submit(
+            &groupshop_backend_shared::prelude::AccountEscrowRefundSubmitRequest {
+                product_id: product_id.clone(),
+                wallet_address: wallet,
+                batch_id,
+                recent_blockhash: build.recent_blockhash,
+                signed_transaction_base64,
+            },
+        )
+        .await?;
+    let signature = submit.tx_signature;
 
     ApiCtx::get()
         .client
@@ -466,11 +502,53 @@ fn validate_build_against_manifest(
     Ok(())
 }
 
+fn render_success_message(message: Option<SuccessMessage>) -> Option<Dom> {
+    Some(match message? {
+        SuccessMessage::Text(text) => html!("span", {
+            .text(&text)
+        }),
+        SuccessMessage::Transaction { signature, url } => html!("span", {
+            .text("Deposit submitted. ")
+            .child(html!("a", {
+                .attr("href", &url)
+                .attr("target", "_blank")
+                .attr("rel", "noopener noreferrer")
+                .style("color", "#166534")
+                .style("font-weight", "700")
+                .style("text-decoration", "underline")
+                .text("View transaction on Solscan")
+            }))
+            .child(html!("span", {
+                .text(&format!(" ({})", shorten_signature(&signature)))
+            }))
+        }),
+    })
+}
+
+fn solscan_tx_url(network: &str, signature: &str) -> String {
+    let cluster = match network {
+        "mainnet" | "mainnet-beta" => "",
+        "devnet" => "?cluster=devnet",
+        "testnet" => "?cluster=testnet",
+        "local" | "localhost" | "localnet" => "?cluster=custom",
+        _ => "",
+    };
+    format!("https://solscan.io/tx/{signature}{cluster}")
+}
+
 fn shorten_wallet(value: &str) -> String {
     if value.len() <= 10 {
         value.to_string()
     } else {
         format!("{}…{}", &value[..4], &value[value.len() - 4..])
+    }
+}
+
+fn shorten_signature(value: &str) -> String {
+    if value.len() <= 16 {
+        value.to_string()
+    } else {
+        format!("{}…{}", &value[..8], &value[value.len() - 8..])
     }
 }
 

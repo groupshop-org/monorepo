@@ -10,10 +10,11 @@ use crate::{
     },
     prelude::*,
     solana::{
-        authority_pubkey_from_config, authority_signature_base64, build_deposit_recipe,
-        build_self_refund_recipe, decode_blockhash, deposit_message, derive_participation_pda,
-        ensure_pool_initialized, product_amount_base_units, rpc_get_account_data,
-        rpc_get_latest_blockhash, self_refund_message, transaction_bytes, verify_wallet_signature,
+        authority_pubkey_from_config, authority_sign_deposit_transaction,
+        authority_sign_self_refund_transaction, build_deposit_recipe, build_self_refund_recipe,
+        decode_blockhash, deposit_message, derive_participation_pda, ensure_pool_initialized,
+        product_amount_base_units, rpc_get_account_data, rpc_get_latest_blockhash,
+        rpc_send_transaction, self_refund_message, transaction_bytes, verify_wallet_signature,
         ParticipationAccount, Pubkey, SIGNATURE_PLACEHOLDER,
     },
     utils::{req_to_json, sign_bytes, verify_bytes},
@@ -180,21 +181,15 @@ pub async fn handle_escrow_deposit_build(
         claims.quantity as u64,
     )?;
     let message = deposit_message(&recipe, blockhash_bytes);
-    let authority_signature_base64 = authority_signature_base64(&ctx.config.solana, &message)?;
-    let authority_signature_bytes = base64::engine::general_purpose::STANDARD
-        .decode(&authority_signature_base64)
-        .map_err(|err| ApiError::Base64Decode(err.to_string()))?;
 
     // The deposit message places the buyer at signer index 0 (fee payer) and
-    // the authority at signer index 1. Build the full transaction bytes with
-    // the buyer slot zero-filled so the client can deserialize via
-    // `Transaction.from()` and Phantom fills in the buyer signature without
-    // recompiling the message — that recompilation is what would otherwise
-    // invalidate the authority signature, since web3.js sorts account keys
-    // alphabetically while the backend preserves declaration order.
+    // the authority at signer index 1. Both slots are zero-filled here so
+    // Phantom signs first; the backend adds the authority signature only after
+    // the signed message returns through `escrow-deposit-submit`.
     let buyer_signature_placeholder = SIGNATURE_PLACEHOLDER.to_vec();
+    let authority_signature_placeholder = SIGNATURE_PLACEHOLDER.to_vec();
     let tx_bytes = transaction_bytes(
-        &[buyer_signature_placeholder, authority_signature_bytes],
+        &[buyer_signature_placeholder, authority_signature_placeholder],
         &message,
     );
     let transaction_base64 = base64::engine::general_purpose::STANDARD.encode(&tx_bytes);
@@ -222,10 +217,51 @@ pub async fn handle_escrow_deposit_build(
         vault_address: recipe.vault.to_string(),
         participation_address: recipe.participation.to_string(),
         participation_bump: recipe.participation_bump,
-        authority_signature_base64,
         transaction_base64,
         batch_id: claims.batch_id,
     })
+}
+
+pub async fn handle_escrow_deposit_submit(
+    ctx: &mut ApiContext,
+    req: HttpRequest,
+) -> ApiResult<AccountEscrowTransactionSubmitResponse> {
+    let req: AccountEscrowDepositSubmitRequest = req_to_json(req).await?;
+    let proof_token = EscrowWalletProofToken::decode_str(&req.proof_token)?;
+    verify_proof_token(ctx, &proof_token).await?;
+
+    let claims = proof_token.claims;
+    let now = js_sys::Date::now() as u64;
+    if now > claims.expires_at_ms {
+        return Err(ApiError::Validation(
+            "wallet proof has expired; request a new challenge".to_string(),
+        ));
+    }
+    if claims.uid != *ctx.unchecked_uid() {
+        return Err(ApiError::Validation(
+            "wallet proof does not belong to the current user".to_string(),
+        ));
+    }
+
+    let wallet = Pubkey::from_base58(&claims.wallet_address)?;
+    let recipe = build_deposit_recipe(
+        &ctx.config.solana,
+        &claims.product_id,
+        &wallet,
+        &claims.uid,
+        claims.product_amount_base_units,
+        claims.shipping_amount_base_units,
+        claims.batch_id,
+        claims.quantity as u64,
+    )?;
+    let signed_tx_bytes = base64::engine::general_purpose::STANDARD
+        .decode(&req.signed_transaction_base64)
+        .map_err(|err| ApiError::Base64Decode(err.to_string()))?;
+    let fully_signed_tx =
+        authority_sign_deposit_transaction(&ctx.config.solana, &signed_tx_bytes, &recipe)?;
+    let tx_signature = rpc_send_transaction(ctx, &fully_signed_tx).await?;
+
+    Ok(AccountEscrowTransactionSubmitResponse { tx_signature })
 }
 
 /// Records a successfully submitted deposit into D1. The client calls this
@@ -303,9 +339,9 @@ pub async fn handle_escrow_deposit_confirm(
 }
 
 /// First leg of the buyer-initiated refund. Mirrors the deposit-build
-/// shape: builds the on-chain SelfRefund transaction, pre-signs the
-/// authority slot, and ships the bytes to the client. Phantom signs the
-/// buyer slot and submits.
+/// shape: builds the on-chain SelfRefund transaction with empty signer
+/// slots. Phantom signs the buyer slot first; the backend adds the authority
+/// signature and submits in the follow-up endpoint.
 pub async fn handle_escrow_refund_build(
     ctx: &mut ApiContext,
     req: HttpRequest,
@@ -349,13 +385,10 @@ pub async fn handle_escrow_refund_build(
     let recent_blockhash = rpc_get_latest_blockhash(ctx).await?;
     let blockhash_bytes = decode_blockhash(&recent_blockhash)?;
     let message = self_refund_message(&recipe, blockhash_bytes);
-    let authority_signature_base64 = authority_signature_base64(&ctx.config.solana, &message)?;
-    let authority_signature_bytes = base64::engine::general_purpose::STANDARD
-        .decode(&authority_signature_base64)
-        .map_err(|err| ApiError::Base64Decode(err.to_string()))?;
     let buyer_signature_placeholder = SIGNATURE_PLACEHOLDER.to_vec();
+    let authority_signature_placeholder = SIGNATURE_PLACEHOLDER.to_vec();
     let tx_bytes = transaction_bytes(
-        &[buyer_signature_placeholder, authority_signature_bytes],
+        &[buyer_signature_placeholder, authority_signature_placeholder],
         &message,
     );
     let transaction_base64 = base64::engine::general_purpose::STANDARD.encode(&tx_bytes);
@@ -373,12 +406,60 @@ pub async fn handle_escrow_refund_build(
         authority_address: recipe.authority.to_base58(),
         wallet_address: req.wallet_address,
         batch_id: req.batch_id,
+        recent_blockhash,
         buyer_associated_token_account: recipe.buyer_ata.to_base58(),
         product_amount_base_units: participation.product_amount,
         shipping_amount_base_units: participation.shipping_amount,
         total_amount_base_units: total,
         transaction_base64,
     })
+}
+
+pub async fn handle_escrow_refund_submit(
+    ctx: &mut ApiContext,
+    req: HttpRequest,
+) -> ApiResult<AccountEscrowTransactionSubmitResponse> {
+    let req: AccountEscrowRefundSubmitRequest = req_to_json(req).await?;
+    let uid = ctx.unchecked_uid().clone();
+    let wallet = Pubkey::from_base58(&req.wallet_address)?;
+
+    let (participation_pda, _bump) =
+        derive_participation_pda(&ctx.config.solana, &req.product_id, &uid, req.batch_id)?;
+    let bytes = rpc_get_account_data(ctx, &participation_pda)
+        .await?
+        .ok_or_else(|| ApiError::Validation("no participation found for this batch".to_string()))?;
+    let participation = ParticipationAccount::from_bytes(&bytes)?;
+    if participation.refunded {
+        return Err(ApiError::Validation(
+            "this participation has already been refunded".to_string(),
+        ));
+    }
+    if participation.user_id != uid.inner() {
+        return Err(ApiError::Validation(
+            "on-chain participation user_id does not match signed-in user".to_string(),
+        ));
+    }
+    if participation.wallet.to_base58() != req.wallet_address {
+        return Err(ApiError::Validation(
+            "wallet address does not match the on-chain participation".to_string(),
+        ));
+    }
+
+    let recipe = build_self_refund_recipe(
+        &ctx.config.solana,
+        &req.product_id,
+        &wallet,
+        &uid,
+        req.batch_id,
+    )?;
+    let signed_tx_bytes = base64::engine::general_purpose::STANDARD
+        .decode(&req.signed_transaction_base64)
+        .map_err(|err| ApiError::Base64Decode(err.to_string()))?;
+    let fully_signed_tx =
+        authority_sign_self_refund_transaction(&ctx.config.solana, &signed_tx_bytes, &recipe)?;
+    let tx_signature = rpc_send_transaction(ctx, &fully_signed_tx).await?;
+
+    Ok(AccountEscrowTransactionSubmitResponse { tx_signature })
 }
 
 /// Second leg of the buyer-initiated refund. Reads the on-chain

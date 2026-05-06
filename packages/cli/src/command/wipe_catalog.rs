@@ -13,7 +13,10 @@ pub async fn run(api_url: &str, email: &str, password: &str) -> Result<()> {
 
     println!("Signing in as {email}...");
     let signin_resp = client
-        .post(format!("{}/auth/email-password/signin", api_url.trim_end_matches('/')))
+        .post(format!(
+            "{}/auth/email-password/signin",
+            api_url.trim_end_matches('/')
+        ))
         .header("Content-Type", "application/json")
         .json(&serde_json::json!({ "email": email, "password": password }))
         .send()
@@ -45,7 +48,10 @@ pub async fn run(api_url: &str, email: &str, password: &str) -> Result<()> {
     println!("Wiping catalog (products, brands, categories)...");
 
     let resp = client
-        .post(format!("{}/admin/wipe-catalog", api_url.trim_end_matches('/')))
+        .post(format!(
+            "{}/admin/wipe-catalog",
+            api_url.trim_end_matches('/')
+        ))
         .header("Authorization", format!("Bearer {session_token}"))
         .header("Content-Type", "application/json")
         .json(&serde_json::json!({}))

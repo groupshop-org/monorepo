@@ -40,6 +40,8 @@ The backend will only co-sign when it has verified, off-chain, that:
 
 Because the backend is a required signer on every `Deposit`, any `(user_id, wallet, amounts)` tuple that lands on-chain carries the backend's attestation. The program itself does no ed25519 verification — it just checks `authority.is_signer()`.
 
+For wallet UX, buyer-facing transactions are signed in Phantom's recommended order: the browser asks Phantom to sign the buyer slot first, then sends the partially signed transaction back to the authenticated backend. The backend verifies the exact message bytes against the approved deposit or refund recipe, adds the authority signature, and submits the fully signed transaction. This keeps the two-signer security model while avoiding the Phantom warning pattern caused by shipping a transaction to Phantom with another signature already attached.
+
 A wallet ownership proof (e.g. a standalone signed message) is a **separate** artifact captured by the backend off-chain; it is not required by the program.
 
 ### Product identity: SHA-256 of the slug
@@ -155,7 +157,7 @@ data: { user_id: U, product_amount: 25_000_000, shipping_amount: 4_500_000 }
 signers: [W (buyer), authority (backend)]
 ```
 
-The buyer's client signs it (authorizing their wallet), the backend signs it (authorizing the identity binding and the amounts), and it's submitted. The program transfers `29_500_000` USDC from the buyer's ATA to the vault and writes a `Participation` PDA `[b"part", h, U]` recording `(pool=h, user_id=U, wallet=W, product_amount=25_000_000, shipping_amount=4_500_000)`. The buyer cannot lie about their `UserId` (backend wouldn't co-sign), and the backend cannot move the buyer's money without the buyer co-signing.
+The buyer's client signs it first in Phantom (authorizing their wallet). The backend then verifies the signed message, adds the authority signature (authorizing the identity binding and the amounts), and submits it. The program transfers `29_500_000` USDC from the buyer's ATA to the vault and writes a `Participation` PDA `[b"part", h, U]` recording `(pool=h, user_id=U, wallet=W, product_amount=25_000_000, shipping_amount=4_500_000)`. The buyer cannot lie about their `UserId` (backend wouldn't co-sign), and the backend cannot move the buyer's money without the buyer co-signing.
 
 ### 3. `LockPool`
 

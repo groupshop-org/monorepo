@@ -14,8 +14,10 @@ pub use username::*;
 pub enum ApiAccountRoute {
     EscrowDepositIntent,
     EscrowDepositBuild,
+    EscrowDepositSubmit,
     EscrowDepositConfirm,
     EscrowRefundBuild,
+    EscrowRefundSubmit,
     EscrowRefundConfirm,
     Orders,
     OrderStatus,
@@ -40,8 +42,10 @@ impl std::fmt::Display for ApiAccountRoute {
         let value = match self {
             Self::EscrowDepositIntent => "escrow-deposit-intent",
             Self::EscrowDepositBuild => "escrow-deposit-build",
+            Self::EscrowDepositSubmit => "escrow-deposit-submit",
             Self::EscrowDepositConfirm => "escrow-deposit-confirm",
             Self::EscrowRefundBuild => "escrow-refund-build",
+            Self::EscrowRefundSubmit => "escrow-refund-submit",
             Self::EscrowRefundConfirm => "escrow-refund-confirm",
             Self::Orders => "orders",
             Self::OrderStatus => "order-status",
@@ -73,8 +77,10 @@ impl TryFrom<&http::Uri> for ApiAccountRoute {
         match remaining.as_slice() {
             ["escrow-deposit-intent"] => Ok(Self::EscrowDepositIntent),
             ["escrow-deposit-build"] => Ok(Self::EscrowDepositBuild),
+            ["escrow-deposit-submit"] => Ok(Self::EscrowDepositSubmit),
             ["escrow-deposit-confirm"] => Ok(Self::EscrowDepositConfirm),
             ["escrow-refund-build"] => Ok(Self::EscrowRefundBuild),
+            ["escrow-refund-submit"] => Ok(Self::EscrowRefundSubmit),
             ["escrow-refund-confirm"] => Ok(Self::EscrowRefundConfirm),
             ["orders"] => Ok(Self::Orders),
             ["order-status"] => Ok(Self::OrderStatus),

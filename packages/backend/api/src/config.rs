@@ -143,8 +143,8 @@ impl Config {
 impl SolanaConfig {
     fn new(env: &Env) -> Self {
         let rpc_url = required_env_var(env, "SOLANA_RPC_URL");
-        let rpc_url_client = optional_env_var(env, "SOLANA_RPC_URL_CLIENT")
-            .unwrap_or_else(|| rpc_url.clone());
+        let rpc_url_client =
+            optional_env_var(env, "SOLANA_RPC_URL_CLIENT").unwrap_or_else(|| rpc_url.clone());
         Self {
             network: required_env_var(env, "SOLANA_NETWORK"),
             rpc_url,
@@ -178,7 +178,11 @@ fn required_env_var(env: &Env, key: &str) -> String {
     env.var(key)
         .ok()
         .map(|value| normalize_env_value(value.to_string()))
-        .or_else(|| env.secret(key).ok().map(|value| normalize_env_value(value.to_string())))
+        .or_else(|| {
+            env.secret(key)
+                .ok()
+                .map(|value| normalize_env_value(value.to_string()))
+        })
         .or_else(|| std::env::var(key).ok().map(normalize_env_value))
         .unwrap_or_else(|| panic!("{key} must be set"))
 }
@@ -187,7 +191,11 @@ fn optional_env_var(env: &Env, key: &str) -> Option<String> {
     env.var(key)
         .ok()
         .map(|value| normalize_env_value(value.to_string()))
-        .or_else(|| env.secret(key).ok().map(|value| normalize_env_value(value.to_string())))
+        .or_else(|| {
+            env.secret(key)
+                .ok()
+                .map(|value| normalize_env_value(value.to_string()))
+        })
         .or_else(|| std::env::var(key).ok().map(normalize_env_value))
 }
 
