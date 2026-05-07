@@ -130,4 +130,5 @@ task cli:market -- --help
 
 ## Vetting
 
-See [COPILOT Vetting](./docs/COPILOT-VETTING.md) for the Colosseum Copilot vetting results.
+- [COPILOT Vetting](./docs/COPILOT-VETTING.md) — initial Colosseum Copilot opportunity vetting.
+- [COPILOT Deep Dive](./docs/COPILOT-DEEP-DIVE.md) — full deep-dive analysis written against the built project ahead of Frontier 2026 submission, with a scorecard across technical difficulty, technical execution, market size, uniqueness, revenue model, GTM, founder-market fit, risk, and submission readiness.
