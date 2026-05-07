@@ -56,7 +56,7 @@ vars:
   URL_HEALTH_DEV: "http://localhost:{{.PORT_HEALTH_DEV}}"
   URL_HEALTH_DASHBOARD_DEV: "http://localhost:{{.PORT_HEALTH_DASHBOARD_DEV}}"
   URL_HEALTH_PROD:
-    sh: printf "%s" "${URL_HEALTH_PROD:-https://groupshop-health.david-551.workers.dev}"
+    sh: printf "%s" "${URL_HEALTH_PROD:-https://health.groupshop.org}"
   URL_HEALTH_DASHBOARD_PROD:
     sh: printf "%s" "${URL_HEALTH_DASHBOARD_PROD:-https://groupshop-health.pages.dev}"
   URL_ADMIN_DEV: "http://127.0.0.1:{{.PORT_ADMIN_DEV}}"
