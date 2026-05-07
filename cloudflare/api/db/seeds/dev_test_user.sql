@@ -17,14 +17,15 @@ INSERT OR IGNORE INTO user_account_profile (
 );
 
 -- Matching local credential for the deterministic test user above.
+-- Dev password: groupshop-dev
 INSERT OR IGNORE INTO user_auth_email (
     email,
     password_hash,
     user_id,
     created_at
 ) VALUES (
-    'david.komer@gmail.com',
-    '$argon2id$v=19$m=19456,t=2,p=1$NAoOntonakZqu3z2YtBztY8cGrg$Qur38bMGdc6TsdEs5LAa5E5AC+bp6KEcVC+vhU47g20',
+    'dev@groupshop.local',
+    '$argon2id$v=19$m=19456,t=2,p=1$cEj/xAJpg/vvldh8OChOeaUcd7s$WCK7SSj10qjzx9eIvmBzpzspu+N4hBpaPYffeRtYGeE',
     'O1G1est5Iq21uhfH6IUyMj_aqpJuGgKd0npy3tXYRUk',
     '2026-04-16 00:00:00'
 );
