@@ -9,14 +9,14 @@
 ## Table of Contents
 
 1. [Scorecard](#scorecard)
-2. [Similar Projects](#similar-projects)
-3. [Archive Insights](#archive-insights)
-4. [Current Landscape](#current-landscape)
+2. [Opportunities & Gaps](#opportunities--gaps)
+3. [Similar Projects](#similar-projects)
+4. [Archive Insights](#archive-insights)
+5. [Current Landscape](#current-landscape)
    - [Angle 1 — On-chain group buying for physical goods](#angle-1--on-chain-group-buying-for-physical-goods)
    - [Angle 2 — Composable stablecoin commerce stack on Solana](#angle-2--composable-stablecoin-commerce-stack-on-solana)
    - [Angle 3 — P2P escrow vs. collective demand aggregation](#angle-3--p2p-escrow-vs-collective-demand-aggregation)
-5. [Key Insights](#key-insights)
-6. [Opportunities & Gaps](#opportunities--gaps)
+6. [Key Insights](#key-insights)
 7. [Deep Dive: Top Opportunity — Groupshop](#deep-dive-top-opportunity--groupshop)
    - [Market Landscape](#market-landscape)
    - [The Problem](#the-problem)
@@ -62,9 +62,22 @@ Single-number ratings (1–10, higher is better) across the dimensions this deep
 
 ---
 
+## Opportunities & Gaps
+
+The headline opportunity, surfaced before the supporting evidence so the rest of this document reads as a defense of these claims rather than a build-up to them.
+
+- **Underexplored — Open whitespace:** On-chain group buy with end-to-end fulfillment. Confirmed by zero Grid hits, zero accelerator overlap, and zero hackathon project closing the loop past the on-chain layer.
+- **Emerging niches:** Crypto-community group buys (Solana Discords, DAO group chats, NFT communities) — audiences that already coordinate collectively and hold USDC. Lower fulfillment surface than mass consumer; better fit for an MVP than open-internet retail.
+- **Well-covered (compose, don't build):** Escrow primitives, USDC off-ramps, payment orchestration. Groupshop's architecture already treats these as inputs.
+- **Adjacent angle worth keeping in mind:** Threshold escrow for *digital* goods (group licensing, AI credits, SaaS team plans, NFT mints) — same mechanic, near-zero fulfillment cost. Useful as a fallback wedge if physical-goods fulfillment proves operationally heavy.
+
+---
+
 ## Similar Projects
 
-> **Note:** These are hackathon submissions — demos and prototypes, not production products. Many may no longer be active. They're included as inspiration and to show what's been tried before, not as a live competitive landscape. Verify current status before drawing conclusions.
+**No direct competitor surfaced.** No submission across the four indexed Colosseum hackathons (Renaissance, Radar, Breakout, Cypherpunk) combines collective threshold escrow with end-to-end physical-goods fulfillment. The projects below are the closest *adjacent* work — either on the escrow primitive (applied bilaterally) or on the group-buy UX (without escrow + fulfillment) — included as design references and to show what's been tried at the on-chain layer, **not as a competitive landscape**. The "Cross-hackathon coverage" paragraph at the end of this section breaks down the overlap categorization in more detail.
+
+> **Caveat:** These are hackathon submissions — demos and prototypes, not production products. Many may no longer be active. Verify current status before drawing conclusions.
 
 - **DezenMart** (`dezenmart`) — Cypherpunk, Sep 2025. *New since prior vetting.* "Decentralized marketplace built on Solana, designed to eliminate mismatched e-commerce deliveries through on-chain escrow and verified product transactions." Tracks: Infrastructure, RWAs, Stablecoins. The closest Cypherpunk-era adjacent project — same primitive (on-chain escrow for e-commerce) but **peer-to-peer, not collective demand aggregation**. No public GitHub or site listed in the Copilot index, no prize.
 - **WishSwap** (`wishswap`) — Cypherpunk, Sep 2025. "Decentralized wish marketplace where users collectively manifest deals through voting" with `$WISH` staking and WishBadges NFTs. Demand-aggregation UX, but no escrow lock-up, no off-ramp, no fulfillment. Tracks: Consumer Apps, DeFi. No prize.
@@ -120,15 +133,6 @@ Single-number ratings (1–10, higher is better) across the dimensions this deep
 - **Patterns:** (1) On-chain escrow as a commerce primitive recurs across hackathons (Solcart, Kora, IsabiPay, Trustra, DezenMart) — but always P2P. (2) When group-buying is attempted (BlinkBuy, WishSwap), the project stops at on-chain mechanics and never connects to off-ramp, supplier, or fulfillment. (3) Web2 group-buy at $100B GMV scale (Temu) coexists with zero crypto entrants — that asymmetry is unusual and informative.
 - **Gaps:** No project — hackathon, accelerator portfolio, or Grid-indexed product — combines (a) collective on-chain commitment, (b) threshold-conditional escrow, (c) stablecoin off-ramp to fiat, (d) supplier execution, and (e) fulfillment to end users. Groupshop's `group-buy-architecture.md` describes exactly this five-link chain.
 - **Trends:** The 2025 stablecoin-commerce push (Shopify+Coinbase+Stripe, Western Union on Solana, Meta on Solana) compresses the time horizon for "stablecoin checkout for physical goods" from speculative to imminent. Groupshop is positioning into a tailwind, not against one.
-
----
-
-## Opportunities & Gaps
-
-- **Underexplored — Open whitespace:** On-chain group buy with end-to-end fulfillment. Confirmed by zero Grid hits, zero accelerator overlap, and zero hackathon project closing the loop past the on-chain layer.
-- **Emerging niches:** Crypto-community group buys (Solana Discords, DAO group chats, NFT communities) — audiences that already coordinate collectively and hold USDC. Lower fulfillment surface than mass consumer; better fit for an MVP than open-internet retail.
-- **Well-covered (compose, don't build):** Escrow primitives, USDC off-ramps, payment orchestration. Groupshop's architecture already treats these as inputs.
-- **Adjacent angle worth keeping in mind:** Threshold escrow for *digital* goods (group licensing, AI credits, SaaS team plans, NFT mints) — same mechanic, near-zero fulfillment cost. Useful as a fallback wedge if physical-goods fulfillment proves operationally heavy.
 
 ---
 
