@@ -14,8 +14,9 @@ use crate::{
         authority_sign_self_refund_transaction, build_deposit_recipe, build_self_refund_recipe,
         decode_blockhash, deposit_message, derive_participation_pda, ensure_pool_initialized,
         product_amount_base_units, rpc_get_account_data, rpc_get_latest_blockhash,
-        rpc_send_transaction, self_refund_message, transaction_bytes, verify_wallet_signature,
-        ParticipationAccount, Pubkey, SIGNATURE_PLACEHOLDER,
+        rpc_send_transaction, rpc_wait_for_account, rpc_wait_for_account_state,
+        self_refund_message, transaction_bytes, verify_wallet_signature, ParticipationAccount,
+        Pubkey, SIGNATURE_PLACEHOLDER,
     },
     utils::{req_to_json, sign_bytes, verify_bytes},
 };
@@ -293,7 +294,13 @@ pub async fn handle_escrow_deposit_confirm(
     let (participation_pda, _bump) =
         derive_participation_pda(&ctx.config.solana, &req.product_id, &uid, batch_id)?;
 
-    let bytes = rpc_get_account_data(ctx, &participation_pda)
+    // Poll for the participation account to absorb the gap between
+    // `sendTransaction` returning and the account becoming visible at
+    // `confirmed` commitment. Without this, the very first confirm
+    // request after a fresh deposit reliably loses this race. Passing
+    // `tx_signature` lets the poll short-circuit with a real error
+    // message if the tx is reported as failed on-chain.
+    let bytes = rpc_wait_for_account(ctx, &participation_pda, &req.tx_signature)
         .await?
         .ok_or_else(|| {
             ApiError::Validation(
@@ -482,19 +489,22 @@ pub async fn handle_escrow_refund_confirm(
 
     let (participation_pda, _bump) =
         derive_participation_pda(&ctx.config.solana, &req.product_id, &uid, req.batch_id)?;
-    let bytes = rpc_get_account_data(ctx, &participation_pda)
-        .await?
-        .ok_or_else(|| {
-            ApiError::Validation(
-                "on-chain participation account missing — has the refund landed?".to_string(),
-            )
-        })?;
+    // Poll until the on-chain participation reflects `refunded == true`.
+    // Same race as deposit confirm: `sendTransaction` returns before the
+    // refund is visible at `confirmed`, so the first read can come back
+    // with the pre-refund state. Passing `tx_signature` lets the poll
+    // short-circuit with a real error if the SelfRefund tx is reported
+    // as failed on-chain.
+    let bytes = rpc_wait_for_account_state(ctx, &participation_pda, &req.tx_signature, |raw| {
+        ParticipationAccount::from_bytes(raw)
+            .map(|p| p.refunded)
+            .unwrap_or(false)
+    })
+    .await?
+    .ok_or_else(|| {
+        ApiError::Validation("on-chain participation hasn't been marked refunded yet".to_string())
+    })?;
     let participation = ParticipationAccount::from_bytes(&bytes)?;
-    if !participation.refunded {
-        return Err(ApiError::Validation(
-            "on-chain participation hasn't been marked refunded yet".to_string(),
-        ));
-    }
     if participation.user_id != uid.inner() {
         return Err(ApiError::Validation(
             "on-chain participation user_id does not match signed-in user".to_string(),

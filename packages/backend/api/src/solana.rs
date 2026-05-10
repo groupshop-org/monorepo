@@ -837,6 +837,113 @@ pub async fn rpc_account_exists(ctx: &ApiContext, address: &Pubkey) -> ApiResult
     Ok(rpc_get_account_data(ctx, address).await?.is_some())
 }
 
+/// Polls `rpc_get_account_data` until the account is visible at
+/// `confirmed` commitment, the tx is reported as failed by the RPC, or
+/// the budget is exhausted.
+///
+/// Solana's `sendTransaction` returns as soon as the leader accepts the
+/// tx for forwarding — the account update only becomes visible at
+/// `confirmed` 1+ slots later (~400ms-1s typical). Without polling, the
+/// confirm endpoints race the tx and intermittently return "account not
+/// found yet" even though the user's deposit/refund did land.
+///
+/// Each iteration also calls `getSignatureStatuses` for `tx_signature`.
+/// If the RPC reports a definitive on-chain error for that signature,
+/// the wait short-circuits with `ApiError::Validation` carrying the
+/// program error text — saves the user the full ~5s timeout when the tx
+/// is definitely never going to land. Failures of the status RPC itself
+/// are swallowed so a flaky `getSignatureStatuses` doesn't degrade the
+/// happy-path behavior of just polling for the account.
+pub async fn rpc_wait_for_account(
+    ctx: &ApiContext,
+    address: &Pubkey,
+    tx_signature: &str,
+) -> ApiResult<Option<Vec<u8>>> {
+    poll_account(ctx, address, tx_signature, |_| true).await
+}
+
+/// Like `rpc_wait_for_account`, but for cases where the account already
+/// exists and we're waiting for a *state change* (e.g. `refunded` flips
+/// to true after a SelfRefund tx lands). Returns `Ok(Some(bytes))` once
+/// `predicate` is satisfied, `Err` if the tx is reported failed, or
+/// `Ok(None)` if the budget is exhausted.
+pub async fn rpc_wait_for_account_state<F>(
+    ctx: &ApiContext,
+    address: &Pubkey,
+    tx_signature: &str,
+    predicate: F,
+) -> ApiResult<Option<Vec<u8>>>
+where
+    F: Fn(&[u8]) -> bool,
+{
+    poll_account(ctx, address, tx_signature, predicate).await
+}
+
+/// Constant 600ms × 8 ≈ 4.8s total. Long enough to clear typical
+/// commitment latency without blocking the worker for too long when a
+/// tx genuinely failed.
+const POLL_MAX_ATTEMPTS: u32 = 8;
+const POLL_DELAY_MS: u32 = 600;
+
+async fn poll_account<F>(
+    ctx: &ApiContext,
+    address: &Pubkey,
+    tx_signature: &str,
+    predicate: F,
+) -> ApiResult<Option<Vec<u8>>>
+where
+    F: Fn(&[u8]) -> bool,
+{
+    for attempt in 0..POLL_MAX_ATTEMPTS {
+        if let Some(bytes) = rpc_get_account_data(ctx, address).await? {
+            if predicate(&bytes) {
+                return Ok(Some(bytes));
+            }
+        }
+        // Best-effort failure check. Status RPC failures are intentionally
+        // swallowed so the happy path still works when getSignatureStatuses
+        // is briefly flaky.
+        if let Ok(Some(err_msg)) = rpc_signature_error(ctx, tx_signature).await {
+            return Err(ApiError::Validation(format!(
+                "on-chain transaction failed: {err_msg}"
+            )));
+        }
+        if attempt + 1 < POLL_MAX_ATTEMPTS {
+            gloo_timers::future::TimeoutFuture::new(POLL_DELAY_MS).await;
+        }
+    }
+    Ok(None)
+}
+
+/// Returns `Some(error_text)` when the RPC reports a definitive on-chain
+/// error for `tx_signature`, `None` if the signature is still pending,
+/// unknown to the RPC, or committed without an error. The error text is
+/// the JSON-stringified `err` object the RPC returned (e.g.
+/// `"InstructionError":[0,{"Custom":6001}]`) — opaque, but enough for the
+/// user/developer to grep against the program's error codes.
+async fn rpc_signature_error(ctx: &ApiContext, tx_signature: &str) -> ApiResult<Option<String>> {
+    #[derive(serde::Deserialize)]
+    struct StatusEntry {
+        err: Option<serde_json::Value>,
+    }
+    #[derive(serde::Deserialize)]
+    struct RpcResult {
+        value: Vec<Option<StatusEntry>>,
+    }
+
+    let res: RpcResult = rpc_call(
+        &ctx.config.solana.rpc_url,
+        "getSignatureStatuses",
+        json!([[tx_signature], {"searchTransactionHistory": false}]),
+    )
+    .await?;
+
+    let Some(entry) = res.value.into_iter().next().flatten() else {
+        return Ok(None);
+    };
+    Ok(entry.err.map(|err| err.to_string()))
+}
+
 /// Fetches the raw bytes of an on-chain account, or `None` if it doesn't
 /// exist. Used by the deposit/refund confirm flows to verify that the
 /// on-chain state is real before mirroring it into D1.

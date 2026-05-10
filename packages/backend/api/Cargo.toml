@@ -20,6 +20,7 @@ curve25519-dalek = { workspace = true }
 ed25519-dalek = { workspace = true }
 futures-util = { workspace = true }
 getrandom = { workspace = true }
+gloo-timers = { workspace = true }
 groupshop-backend-shared = { workspace = true }
 http = { workspace = true }
 js-sys = { workspace = true }
