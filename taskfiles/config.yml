@@ -56,12 +56,12 @@ vars:
   URL_HEALTH_DEV: "http://localhost:{{.PORT_HEALTH_DEV}}"
   URL_HEALTH_DASHBOARD_DEV: "http://localhost:{{.PORT_HEALTH_DASHBOARD_DEV}}"
   URL_HEALTH_PROD:
-    sh: printf "%s" "${URL_HEALTH_PROD:-https://health.groupshop.org}"
+    sh: printf "%s" "${URL_HEALTH_PROD:-https://health-api.groupshop.org}"
   URL_HEALTH_DASHBOARD_PROD:
-    sh: printf "%s" "${URL_HEALTH_DASHBOARD_PROD:-https://groupshop-health.pages.dev}"
+    sh: printf "%s" "${URL_HEALTH_DASHBOARD_PROD:-https://health.groupshop.org}"
   URL_ADMIN_DEV: "http://127.0.0.1:{{.PORT_ADMIN_DEV}}"
   URL_ADMIN_PROD:
-    sh: printf "%s" "${URL_ADMIN_PROD:-https://groupshop-admin.pages.dev}"
+    sh: printf "%s" "${URL_ADMIN_PROD:-https://admin.groupshop.org}"
   URL_LANDING_MEDIA_PROD: "https://groupshop.org/media"
 
   # CLOUDFLARE BINDINGS
