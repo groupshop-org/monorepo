@@ -59,9 +59,9 @@ pub fn render() -> Dom {
                         .style("grid-template-columns", "1fr 1fr 1fr")
                         .style("gap", "0.75rem")
                         .children([
-                            input_field("Slug ID", "e.g. shampoo", form_id.clone()),
-                            input_field("Name", "Display name", form_name.clone()),
-                            input_field("Parent ID", "(optional) parent slug", form_parent_id.clone()),
+                            input_field("Slug ID", "e.g. shampoo", form_id.clone(), ""),
+                            input_field("Name", "Display name", form_name.clone(), ""),
+                            input_field("Parent ID", "(optional) parent slug", form_parent_id.clone(), ""),
                         ])
                     }),
                     html!("button", {
@@ -123,8 +123,8 @@ pub fn render() -> Dom {
 
             // Category tree
             html!("div", {
-                .children_signal_vec(categories.signal_vec_cloned().map(clone!(error => move |cat| {
-                    render_category_row(cat, error.clone())
+                .children_signal_vec(categories.signal_vec_cloned().map(clone!(error, notice => move |cat| {
+                    render_category_row(cat, error.clone(), notice.clone())
                 })))
             }),
         ])
@@ -142,39 +142,88 @@ fn load_categories(categories: MutableVec<AdminCategorySummary>, error: Mutable<
     });
 }
 
-fn render_category_row(cat: AdminCategorySummary, error: Mutable<Option<String>>) -> Dom {
+fn render_category_row(
+    cat: AdminCategorySummary,
+    error: Mutable<Option<String>>,
+    notice: Mutable<Option<String>>,
+) -> Dom {
     let indent = format!("{}rem", cat.depth as f64 * 1.5);
     let cat_id = cat.id.clone();
+    let editing: Mutable<bool> = Mutable::new(false);
+    let current_name: Mutable<String> = Mutable::new(cat.name.clone());
+    let current_parent: Mutable<Option<ProductCategoryId>> = Mutable::new(cat.parent_id.clone());
+    let name_buf = Arc::new(Mutex::new(cat.name.clone()));
+    let parent_buf = Arc::new(Mutex::new(
+        cat.parent_id
+            .as_ref()
+            .map(|p| p.as_str().to_string())
+            .unwrap_or_default(),
+    ));
 
+    html!("div", {
+        .style("padding", "0.4rem 0.75rem")
+        .style("padding-left", &indent)
+        .style("border-bottom", &format!("1px solid {}", color::LINE))
+        .child_signal(editing.signal().map(clone!(cat_id, name_buf, parent_buf, current_name, current_parent, editing, error, notice => move |is_editing| {
+            if is_editing {
+                Some(render_edit(cat_id.clone(), name_buf.clone(), parent_buf.clone(), current_name.clone(), current_parent.clone(), editing.clone(), error.clone(), notice.clone()))
+            } else {
+                Some(render_view(cat_id.clone(), current_name.clone(), current_parent.clone(), name_buf.clone(), parent_buf.clone(), editing.clone(), error.clone()))
+            }
+        })))
+    })
+}
+
+fn render_view(
+    cat_id: ProductCategoryId,
+    current_name: Mutable<String>,
+    current_parent: Mutable<Option<ProductCategoryId>>,
+    name_buf: Arc<Mutex<String>>,
+    parent_buf: Arc<Mutex<String>>,
+    editing: Mutable<bool>,
+    error: Mutable<Option<String>>,
+) -> Dom {
     html!("div", {
         .style("display", "flex")
         .style("align-items", "center")
         .style("gap", "1rem")
-        .style("padding", "0.4rem 0.75rem")
-        .style("padding-left", &indent)
-        .style("border-bottom", &format!("1px solid {}", color::LINE))
         .children([
             html!("div", {
                 .style("flex", "1")
                 .children([
-                    html!("strong", { .text(&cat.name) }),
+                    html!("strong", { .text_signal(current_name.signal_cloned()) }),
                     html!("span", {
                         .style("color", color::SUBTLE)
                         .style("margin-left", "0.5rem")
                         .style("font-size", "0.8rem")
-                        .text(cat.id.as_str())
+                        .text(cat_id.as_str())
                     }),
-                    if let Some(ref pid) = cat.parent_id {
-                        html!("span", {
-                            .style("color", color::SUBTLE)
-                            .style("margin-left", "0.5rem")
-                            .style("font-size", "0.75rem")
-                            .text(&format!("(parent: {})", pid.as_str()))
-                        })
-                    } else {
-                        html!("span", {})
-                    },
+                    html!("span", {
+                        .style("color", color::SUBTLE)
+                        .style("margin-left", "0.5rem")
+                        .style("font-size", "0.75rem")
+                        .text_signal(current_parent.signal_cloned().map(|p| match p {
+                            Some(pid) => format!("(parent: {})", pid.as_str()),
+                            None => String::new(),
+                        }))
+                    }),
                 ])
+            }),
+            html!("button", {
+                .style("cursor", "pointer")
+                .style("color", color::BLUE)
+                .style("font-size", "0.8rem")
+                .style("background", "transparent")
+                .style("border", "0")
+                .text("Edit")
+                .event(clone!(current_name, current_parent, name_buf, parent_buf, editing => move |_: events::Click| {
+                    *name_buf.lock().unwrap() = current_name.get_cloned();
+                    *parent_buf.lock().unwrap() = current_parent
+                        .get_cloned()
+                        .map(|p| p.as_str().to_string())
+                        .unwrap_or_default();
+                    editing.set(true);
+                }))
             }),
             html!("button", {
                 .style("cursor", "pointer")
@@ -198,9 +247,94 @@ fn render_category_row(cat: AdminCategorySummary, error: Mutable<Option<String>>
     })
 }
 
-fn input_field(label: &str, placeholder: &str, value: Arc<Mutex<String>>) -> Dom {
+#[allow(clippy::too_many_arguments)]
+fn render_edit(
+    cat_id: ProductCategoryId,
+    name_buf: Arc<Mutex<String>>,
+    parent_buf: Arc<Mutex<String>>,
+    current_name: Mutable<String>,
+    current_parent: Mutable<Option<ProductCategoryId>>,
+    editing: Mutable<bool>,
+    error: Mutable<Option<String>>,
+    notice: Mutable<Option<String>>,
+) -> Dom {
+    let initial_name = name_buf.lock().unwrap().clone();
+    let initial_parent = parent_buf.lock().unwrap().clone();
+    html!("div", {
+        .style("display", "grid")
+        .style("grid-template-columns", "auto 1fr 1fr auto auto")
+        .style("align-items", "end")
+        .style("gap", "0.75rem")
+        .children([
+            html!("span", {
+                .style("color", color::SUBTLE)
+                .style("font-size", "0.8rem")
+                .style("padding-bottom", "0.4rem")
+                .text(cat_id.as_str())
+            }),
+            input_field("Name", "Display name", name_buf.clone(), &initial_name),
+            input_field("Parent ID", "(optional) parent slug", parent_buf.clone(), &initial_parent),
+            html!("button", {
+                .style("cursor", "pointer")
+                .style("color", color::GREEN)
+                .style("font-size", "0.8rem")
+                .style("background", "transparent")
+                .style("border", "0")
+                .text("Save")
+                .event(clone!(cat_id, name_buf, parent_buf, current_name, current_parent, editing, error, notice => move |_: events::Click| {
+                    let id = cat_id.clone();
+                    let new_name = name_buf.lock().unwrap().clone();
+                    let parent_val = parent_buf.lock().unwrap().clone();
+                    let current_name = current_name.clone();
+                    let current_parent = current_parent.clone();
+                    let editing = editing.clone();
+                    let error = error.clone();
+                    let notice = notice.clone();
+                    spawn_local(async move {
+                        let parent_id_opt: Option<Option<ProductCategoryId>> = if parent_val.trim().is_empty() {
+                            Some(None)
+                        } else {
+                            match ProductCategoryId::new(parent_val.trim()) {
+                                Ok(p) => Some(Some(p)),
+                                Err(e) => { error.set(Some(format!("Invalid parent: {e}"))); return; }
+                            }
+                        };
+                        match ApiCtx::get().client.admin_update_category(&AdminUpdateCategoryRequest {
+                            id,
+                            name: Some(new_name),
+                            parent_id: parent_id_opt,
+                        }).await {
+                            Ok(res) => {
+                                current_name.set(res.category.name);
+                                current_parent.set(res.category.parent_id);
+                                editing.set(false);
+                                notice.set(Some("Category updated".to_string()));
+                            }
+                            Err(e) => error.set(Some(format!("{e:?}"))),
+                        }
+                    });
+                }))
+            }),
+            html!("button", {
+                .style("cursor", "pointer")
+                .style("color", color::MUTED)
+                .style("font-size", "0.8rem")
+                .style("background", "transparent")
+                .style("border", "0")
+                .text("Cancel")
+                .event(clone!(editing => move |_: events::Click| {
+                    editing.set(false);
+                }))
+            }),
+        ])
+    })
+}
+
+fn input_field(label: &str, placeholder: &str, value: Arc<Mutex<String>>, initial: &str) -> Dom {
     let label = label.to_string();
     let placeholder = placeholder.to_string();
+    let initial = initial.to_string();
+    *value.lock().unwrap() = initial.clone();
 
     html!("div", {
         .children([
@@ -212,6 +346,7 @@ fn input_field(label: &str, placeholder: &str, value: Arc<Mutex<String>>) -> Dom
             html!("input" => web_sys::HtmlInputElement, {
                 .attr("type", "text")
                 .attr("placeholder", &placeholder)
+                .prop("value", &initial)
                 .style("display", "block")
                 .style("width", "100%")
                 .style("padding", "0.375rem 0.5rem")

@@ -2,9 +2,6 @@
   "name": "groupshop-health",
   "main": "../../packages/backend/health/build/index.js",
   "compatibility_date": "2025-03-10",
-  "routes": [
-    { "pattern": "health-api.groupshop.org", "custom_domain": true }
-  ],
   "observability": {
     "logs": {
       "enabled": true
