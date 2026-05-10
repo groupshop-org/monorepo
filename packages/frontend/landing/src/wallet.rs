@@ -37,7 +37,6 @@ enum ManifestState {
 }
 
 enum DepositAction {
-    Connected,
     Submitted(String),
 }
 
@@ -229,16 +228,16 @@ pub fn render_deposit_panel(product: ProductSummary, committed_units: Mutable<u6
                                 }
                             };
 
+                            // Connect-if-needed and continue with the deposit
+                            // in a single click. Phantom's `connect()` resolves
+                            // silently when the site is already trusted, so the
+                            // user only sees its UI on the very first time.
                             let wallet = match wallet_address.get_cloned() {
                                 Some(wallet) => wallet,
                                 None => {
                                     let wallet = phantom_connect().await?;
                                     wallet_address.set(Some(wallet.clone()));
-                                    success.set(Some(SuccessMessage::Text(format!(
-                                        "Connected wallet: {}. Click again to deposit.",
-                                        shorten_wallet(&wallet)
-                                    ))));
-                                    return Ok::<DepositAction, FrontendError>(DepositAction::Connected);
+                                    wallet
                                 }
                             };
 
@@ -305,7 +304,6 @@ pub fn render_deposit_panel(product: ProductSummary, committed_units: Mutable<u6
                         .await;
 
                         match run {
-                            Ok(DepositAction::Connected) => {}
                             Ok(DepositAction::Submitted(signature)) => {
                                 success.set(Some(SuccessMessage::Transaction {
                                     url: solscan_tx_url(config::solana_network(), &signature),
