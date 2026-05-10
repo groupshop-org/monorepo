@@ -59,8 +59,8 @@ pub fn render() -> Dom {
                         .style("grid-template-columns", "1fr 1fr")
                         .style("gap", "0.75rem")
                         .children([
-                            input_field("Slug ID", "e.g. loreal", form_id.clone()),
-                            input_field("Name", "Display name", form_name.clone()),
+                            input_field("Slug ID", "e.g. loreal", form_id.clone(), ""),
+                            input_field("Name", "Display name", form_name.clone(), ""),
                         ])
                     }),
                     html!("button", {
@@ -112,8 +112,8 @@ pub fn render() -> Dom {
 
             // Brand list
             html!("div", {
-                .children_signal_vec(brands.signal_vec_cloned().map(clone!(error => move |brand| {
-                    render_brand_row(brand, error.clone())
+                .children_signal_vec(brands.signal_vec_cloned().map(clone!(error, notice => move |brand| {
+                    render_brand_row(brand, error.clone(), notice.clone())
                 })))
             }),
 
@@ -151,27 +151,64 @@ fn load_brands(
     });
 }
 
-fn render_brand_row(brand: AdminBrandSummary, error: Mutable<Option<String>>) -> Dom {
+fn render_brand_row(
+    brand: AdminBrandSummary,
+    error: Mutable<Option<String>>,
+    notice: Mutable<Option<String>>,
+) -> Dom {
+    let editing: Mutable<bool> = Mutable::new(false);
+    let name_buf = Arc::new(Mutex::new(brand.name.clone()));
+    let current_name: Mutable<String> = Mutable::new(brand.name.clone());
     let brand_id = brand.id.clone();
 
+    html!("div", {
+        .style("padding", "0.4rem 0.75rem")
+        .style("border-bottom", &format!("1px solid {}", color::LINE))
+        .child_signal(editing.signal().map(clone!(brand_id, name_buf, current_name, editing, error, notice => move |is_editing| {
+            if is_editing {
+                Some(render_edit(brand_id.clone(), name_buf.clone(), current_name.clone(), editing.clone(), error.clone(), notice.clone()))
+            } else {
+                Some(render_view(brand_id.clone(), current_name.clone(), name_buf.clone(), editing.clone(), error.clone()))
+            }
+        })))
+    })
+}
+
+fn render_view(
+    brand_id: ProductBrandId,
+    current_name: Mutable<String>,
+    name_buf: Arc<Mutex<String>>,
+    editing: Mutable<bool>,
+    error: Mutable<Option<String>>,
+) -> Dom {
     html!("div", {
         .style("display", "flex")
         .style("align-items", "center")
         .style("gap", "1rem")
-        .style("padding", "0.4rem 0.75rem")
-        .style("border-bottom", &format!("1px solid {}", color::LINE))
         .children([
             html!("div", {
                 .style("flex", "1")
                 .children([
-                    html!("strong", { .text(&brand.name) }),
+                    html!("strong", { .text_signal(current_name.signal_cloned()) }),
                     html!("span", {
                         .style("color", color::SUBTLE)
                         .style("margin-left", "0.5rem")
                         .style("font-size", "0.8rem")
-                        .text(brand.id.as_str())
+                        .text(brand_id.as_str())
                     }),
                 ])
+            }),
+            html!("button", {
+                .style("cursor", "pointer")
+                .style("color", color::BLUE)
+                .style("font-size", "0.8rem")
+                .style("background", "transparent")
+                .style("border", "0")
+                .text("Edit")
+                .event(clone!(current_name, name_buf, editing => move |_: events::Click| {
+                    *name_buf.lock().unwrap() = current_name.get_cloned();
+                    editing.set(true);
+                }))
             }),
             html!("button", {
                 .style("cursor", "pointer")
@@ -195,9 +232,78 @@ fn render_brand_row(brand: AdminBrandSummary, error: Mutable<Option<String>>) ->
     })
 }
 
-fn input_field(label: &str, placeholder: &str, value: Arc<Mutex<String>>) -> Dom {
+fn render_edit(
+    brand_id: ProductBrandId,
+    name_buf: Arc<Mutex<String>>,
+    current_name: Mutable<String>,
+    editing: Mutable<bool>,
+    error: Mutable<Option<String>>,
+    notice: Mutable<Option<String>>,
+) -> Dom {
+    let initial = name_buf.lock().unwrap().clone();
+    html!("div", {
+        .style("display", "flex")
+        .style("align-items", "center")
+        .style("gap", "0.75rem")
+        .children([
+            html!("span", {
+                .style("color", color::SUBTLE)
+                .style("font-size", "0.8rem")
+                .text(brand_id.as_str())
+            }),
+            html!("div", {
+                .style("flex", "1")
+                .child(input_field("", "Name", name_buf.clone(), &initial))
+            }),
+            html!("button", {
+                .style("cursor", "pointer")
+                .style("color", color::GREEN)
+                .style("font-size", "0.8rem")
+                .style("background", "transparent")
+                .style("border", "0")
+                .text("Save")
+                .event(clone!(brand_id, name_buf, current_name, editing, error, notice => move |_: events::Click| {
+                    let id = brand_id.clone();
+                    let new_name = name_buf.lock().unwrap().clone();
+                    let current_name = current_name.clone();
+                    let editing = editing.clone();
+                    let error = error.clone();
+                    let notice = notice.clone();
+                    spawn_local(async move {
+                        match ApiCtx::get().client.admin_update_brand(&AdminUpdateBrandRequest {
+                            id,
+                            name: Some(new_name.clone()),
+                        }).await {
+                            Ok(res) => {
+                                current_name.set(res.brand.name);
+                                editing.set(false);
+                                notice.set(Some("Brand updated".to_string()));
+                            }
+                            Err(e) => error.set(Some(format!("{e:?}"))),
+                        }
+                    });
+                }))
+            }),
+            html!("button", {
+                .style("cursor", "pointer")
+                .style("color", color::MUTED)
+                .style("font-size", "0.8rem")
+                .style("background", "transparent")
+                .style("border", "0")
+                .text("Cancel")
+                .event(clone!(editing => move |_: events::Click| {
+                    editing.set(false);
+                }))
+            }),
+        ])
+    })
+}
+
+fn input_field(label: &str, placeholder: &str, value: Arc<Mutex<String>>, initial: &str) -> Dom {
     let label = label.to_string();
     let placeholder = placeholder.to_string();
+    let initial = initial.to_string();
+    *value.lock().unwrap() = initial.clone();
 
     html!("div", {
         .children([
@@ -209,6 +315,7 @@ fn input_field(label: &str, placeholder: &str, value: Arc<Mutex<String>>) -> Dom
             html!("input" => web_sys::HtmlInputElement, {
                 .attr("type", "text")
                 .attr("placeholder", &placeholder)
+                .prop("value", &initial)
                 .style("display", "block")
                 .style("width", "100%")
                 .style("padding", "0.375rem 0.5rem")
