@@ -125,9 +125,14 @@ fn render(route: Route) -> Dom {
     })
 }
 
+const HOME_PAGE_SIZE: u32 = 24;
+
 fn render_home() -> Dom {
     let products: Mutable<Option<Vec<ProductSummary>>> = Mutable::new(None);
     let total: Mutable<u32> = Mutable::new(0);
+    let categories: Mutable<Option<Vec<ProductCategorySummary>>> = Mutable::new(None);
+    let selected_category: Mutable<Option<ProductCategoryId>> = Mutable::new(None);
+    let current_page: Mutable<u32> = Mutable::new(1);
     // Filter: when on, only deals that already have at least one buyer
     // are returned. The backend does the filtering via a SQL EXISTS clause
     // so pagination stays accurate.
@@ -144,23 +149,44 @@ fn render_home() -> Dom {
         }
     }));
 
+    // One-shot category-tree load. Errors collapse to an empty list so
+    // the sidebar gracefully shows "no categories" rather than blocking
+    // product browsing.
+    spawn_local(clone!(categories => async move {
+        match ApiCtx::get().client.product_categories().await {
+            Ok(res) => categories.set(Some(res.categories)),
+            Err(_) => categories.set(Some(Vec::new())),
+        }
+    }));
+
+    // Reset the page back to 1 whenever the traction filter flips —
+    // otherwise a user toggling the filter on while on page 4 could land
+    // on an out-of-range page. The initial emission is harmless since
+    // the page is already 1.
+    spawn_local(clone!(with_participants_only, current_page => async move {
+        with_participants_only.signal().for_each(move |_| {
+            current_page.set(1);
+            async {}
+        }).await;
+    }));
+
     spawn_local(
-        clone!(products, total, with_participants_only, tick => async move {
-            // Combined signal: re-emits when either the toggle flips or the
-            // polling tick advances. Using `for_each` from futures_signals
-            // keeps the compile-time deps to what's already in the workspace.
+        clone!(products, total, with_participants_only, selected_category, current_page, tick => async move {
+            // Combined signal: re-emits whenever any of the inputs change.
             let signal = futures_signals::map_ref! {
                 let only = with_participants_only.signal(),
-                let _tick = tick.signal() => *only
+                let cat = selected_category.signal_cloned(),
+                let page = current_page.signal(),
+                let _tick = tick.signal() => (*only, cat.clone(), *page)
             };
-            signal.for_each(move |only| {
+            signal.for_each(move |(only, cat, page)| {
                 let products = products.clone();
                 let total = total.clone();
                 async move {
                     match ApiCtx::get().client.product_list(&ProductListRequest {
-                        page: 1,
-                        per_page: 24,
-                        category_id: None,
+                        page,
+                        per_page: HOME_PAGE_SIZE,
+                        category_id: cat,
                         brand_id: None,
                         search: None,
                         with_participants_only: only,
@@ -170,6 +196,7 @@ fn render_home() -> Dom {
                             products.set(Some(res.products));
                         }
                         Err(_) => {
+                            total.set(0);
                             products.set(Some(Vec::new()));
                         }
                     }
@@ -185,64 +212,353 @@ fn render_home() -> Dom {
         .child(html!("section", {
             .attr("id", "products")
             .style("margin-top", "2.5rem")
+            .style("display", "grid")
+            .style("grid-template-columns", "minmax(0, 14rem) minmax(0, 1fr)")
+            .style("gap", "1.5rem")
+            .style("align-items", "start")
+            .child(category_sidebar(categories.clone(), selected_category.clone(), current_page.clone()))
             .child(html!("div", {
-                .class(&*chrome::SECTION_HEADER)
-                .children([
-                    // Left side of the section header: title + the
-                    // traction-filter pill, anchored together so the
-                    // filter is the first interactive thing the user
-                    // notices in the products section.
-                    html!("div", {
-                        .style("display", "flex")
-                        .style("align-items", "center")
-                        .style("gap", "0.9rem")
-                        .style("flex-wrap", "wrap")
-                        .children([
-                            section_title("Products"),
-                            traction_filter_toggle(with_participants_only.clone()),
-                        ])
-                    }),
-                    html!("span", {
-                        .class(&*typography::MICRO_LABEL)
-                        .text_signal(total.signal().map(|t| {
-                            if t > 0 { format!("{t} items") } else { String::new() }
-                        }))
-                    }),
-                ])
-            }))
-            .child(html!("div", {
-                .child_signal(products.signal_cloned().map(|maybe_products| {
-                    Some(match maybe_products {
-                        None => html!("p", {
-                            .class(&*typography::BODY_MUTED)
-                            .text("Loading products...")
-                        }),
-                        Some(products) if products.is_empty() => html!("div", {
-                            .class(&*chrome::CARD)
-                            .style("text-align", "center")
-                            .style("padding", "3rem")
+                .style("min-width", "0")
+                .child(html!("div", {
+                    .class(&*chrome::SECTION_HEADER)
+                    .children([
+                        html!("div", {
+                            .style("display", "flex")
+                            .style("align-items", "center")
+                            .style("gap", "0.9rem")
+                            .style("flex-wrap", "wrap")
                             .children([
-                                html!("p", {
-                                    .class(&*typography::LEAD_TEXT)
-                                    .text("No products match this filter.")
-                                }),
-                                html!("p", {
-                                    .class(&*typography::BODY_MUTED)
-                                    .text("Try turning off the traction filter to see all available deals.")
-                                }),
+                                section_title("Products"),
+                                traction_filter_toggle(with_participants_only.clone()),
                             ])
                         }),
-                        Some(products) => html!("div", {
-                            .class(&*chrome::DEAL_GRID)
-                            .children(products.into_iter().map(product_card).collect::<Vec<_>>())
+                        html!("span", {
+                            .class(&*typography::MICRO_LABEL)
+                            .text_signal(total.signal().map(|t| {
+                                if t > 0 { format!("{t} items") } else { String::new() }
+                            }))
                         }),
-                    })
+                    ])
                 }))
+                .child(breadcrumbs(
+                    categories.clone(),
+                    selected_category.clone(),
+                    current_page.clone(),
+                ))
+                .child(html!("div", {
+                    .child_signal(products.signal_cloned().map(|maybe_products| {
+                        Some(match maybe_products {
+                            None => html!("p", {
+                                .class(&*typography::BODY_MUTED)
+                                .text("Loading products...")
+                            }),
+                            Some(products) if products.is_empty() => html!("div", {
+                                .class(&*chrome::CARD)
+                                .style("text-align", "center")
+                                .style("padding", "3rem")
+                                .children([
+                                    html!("p", {
+                                        .class(&*typography::LEAD_TEXT)
+                                        .text("No products match this filter.")
+                                    }),
+                                    html!("p", {
+                                        .class(&*typography::BODY_MUTED)
+                                        .text("Try a different category or turn off the traction filter.")
+                                    }),
+                                ])
+                            }),
+                            Some(products) => html!("div", {
+                                .class(&*chrome::DEAL_GRID)
+                                .children(products.into_iter().map(product_card).collect::<Vec<_>>())
+                            }),
+                        })
+                    }))
+                }))
+                .child(pagination_bar(current_page.clone(), total.clone()))
             }))
         }))
         .child(how_it_works_section())
         .child(site_footer())
     })
+}
+
+/// Sidebar with the full category tree. Selecting a category updates the
+/// `selected_category` Mutable and resets the page back to 1 so the user
+/// doesn't land on an empty page when switching to a smaller category.
+fn category_sidebar(
+    categories: Mutable<Option<Vec<ProductCategorySummary>>>,
+    selected: Mutable<Option<ProductCategoryId>>,
+    current_page: Mutable<u32>,
+) -> Dom {
+    html!("aside", {
+        .style("position", "sticky")
+        .style("top", "1rem")
+        .style("align-self", "start")
+        .style("max-height", "calc(100vh - 2rem)")
+        .style("overflow-y", "auto")
+        .style("border", &format!("1px solid {}", groupshop_frontend_shared::theme::color::LINE))
+        .style("border-radius", "0.6rem")
+        .style("background", "#ffffff")
+        .style("padding", "0.75rem")
+        .child(html!("div", {
+            .class(&*typography::MICRO_LABEL)
+            .style("margin-bottom", "0.5rem")
+            .text("Categories")
+        }))
+        .child(category_link_button(
+            "All products",
+            None,
+            0,
+            selected.clone(),
+            current_page.clone(),
+        ))
+        .child_signal(categories.signal_cloned().map(clone!(selected, current_page => move |maybe_cats| {
+            Some(match maybe_cats {
+                None => html!("p", {
+                    .class(&*typography::BODY_MUTED)
+                    .style("font-size", "0.8rem")
+                    .style("padding", "0.4rem 0.5rem")
+                    .text("Loading…")
+                }),
+                Some(cats) if cats.is_empty() => html!("p", {
+                    .class(&*typography::BODY_MUTED)
+                    .style("font-size", "0.8rem")
+                    .style("padding", "0.4rem 0.5rem")
+                    .text("No categories yet.")
+                }),
+                Some(cats) => html!("div", {
+                    .style("display", "flex")
+                    .style("flex-direction", "column")
+                    .children(cats.into_iter().map(|c| category_link_button(
+                        &c.name,
+                        Some(c.id),
+                        c.depth,
+                        selected.clone(),
+                        current_page.clone(),
+                    )).collect::<Vec<_>>())
+                }),
+            })
+        })))
+    })
+}
+
+fn category_link_button(
+    label: &str,
+    target: Option<ProductCategoryId>,
+    depth: u32,
+    selected: Mutable<Option<ProductCategoryId>>,
+    current_page: Mutable<u32>,
+) -> Dom {
+    let label = label.to_string();
+    let target_for_signal = target.clone();
+    let target_for_click = target.clone();
+    html!("button", {
+        .attr("type", "button")
+        .style("text-align", "left")
+        .style("background", "transparent")
+        .style("border", "0")
+        .style("cursor", "pointer")
+        .style("padding", "0.4rem 0.5rem")
+        .style("padding-left", &format!("{}rem", 0.5 + depth as f64 * 0.85))
+        .style("border-radius", "0.35rem")
+        .style("font-size", "0.88rem")
+        .style_signal("background", selected.signal_cloned().map(move |sel| {
+            if sel == target_for_signal { "rgba(13, 104, 246, 0.08)".to_string() } else { "transparent".to_string() }
+        }))
+        .style_signal("font-weight", selected.signal_cloned().map({
+            let target_for_weight = target.clone();
+            move |sel| if sel == target_for_weight { "600".to_string() } else { "400".to_string() }
+        }))
+        .style_signal("color", selected.signal_cloned().map({
+            let target_for_color = target.clone();
+            move |sel| if sel == target_for_color { "#0d68f6".to_string() } else { "#111827".to_string() }
+        }))
+        .text(&label)
+        .event(clone!(selected, current_page => move |_: events::Click| {
+            current_page.set(1);
+            selected.set(target_for_click.clone());
+        }))
+    })
+}
+
+/// Breadcrumbs: "All products / Parent / Selected". Walks parent_id up
+/// the loaded category tree. Hidden when nothing is selected (the
+/// products grid is "All products" by default).
+fn breadcrumbs(
+    categories: Mutable<Option<Vec<ProductCategorySummary>>>,
+    selected: Mutable<Option<ProductCategoryId>>,
+    current_page: Mutable<u32>,
+) -> Dom {
+    html!("nav", {
+        .style("margin-top", "0.5rem")
+        .style("margin-bottom", "0.75rem")
+        .style("font-size", "0.85rem")
+        .style("color", "#6b7280")
+        .child_signal(
+            futures_signals::map_ref! {
+                let cats = categories.signal_cloned(),
+                let sel = selected.signal_cloned() => (cats.clone(), sel.clone())
+            }.map(clone!(selected, current_page => move |(cats, sel)| {
+                let cats = cats.unwrap_or_default();
+                let trail: Vec<ProductCategorySummary> = match sel {
+                    None => Vec::new(),
+                    Some(id) => walk_up_trail(&cats, &id),
+                };
+                if trail.is_empty() {
+                    return None;
+                }
+                let mut items: Vec<Dom> = Vec::new();
+                items.push(crumb_link(
+                    "All products",
+                    None,
+                    selected.clone(),
+                    current_page.clone(),
+                ));
+                let last_idx = trail.len() - 1;
+                for (i, cat) in trail.into_iter().enumerate() {
+                    items.push(html!("span", {
+                        .style("margin", "0 0.4rem")
+                        .text("›")
+                    }));
+                    if i == last_idx {
+                        items.push(html!("span", {
+                            .style("color", "#111827")
+                            .style("font-weight", "600")
+                            .text(&cat.name)
+                        }));
+                    } else {
+                        items.push(crumb_link(
+                            &cat.name,
+                            Some(cat.id),
+                            selected.clone(),
+                            current_page.clone(),
+                        ));
+                    }
+                }
+                Some(html!("div", {
+                    .style("display", "flex")
+                    .style("flex-wrap", "wrap")
+                    .style("align-items", "center")
+                    .children(items)
+                }))
+            }))
+        )
+    })
+}
+
+fn crumb_link(
+    label: &str,
+    target: Option<ProductCategoryId>,
+    selected: Mutable<Option<ProductCategoryId>>,
+    current_page: Mutable<u32>,
+) -> Dom {
+    let label = label.to_string();
+    html!("button", {
+        .attr("type", "button")
+        .style("background", "transparent")
+        .style("border", "0")
+        .style("padding", "0")
+        .style("cursor", "pointer")
+        .style("color", "#0d68f6")
+        .style("font-size", "0.85rem")
+        .text(&label)
+        .event(clone!(selected, current_page => move |_: events::Click| {
+            current_page.set(1);
+            selected.set(target.clone());
+        }))
+    })
+}
+
+fn walk_up_trail(
+    cats: &[ProductCategorySummary],
+    leaf: &ProductCategoryId,
+) -> Vec<ProductCategorySummary> {
+    let mut out: Vec<ProductCategorySummary> = Vec::new();
+    let mut current: Option<ProductCategoryId> = Some(leaf.clone());
+    // Hard cap to defend against accidental cycles in seed data.
+    for _ in 0..32 {
+        let Some(id) = current.clone() else { break };
+        let Some(found) = cats.iter().find(|c| c.id == id) else {
+            break;
+        };
+        out.push(found.clone());
+        current = found.parent_id.clone();
+    }
+    out.reverse();
+    out
+}
+
+fn pagination_bar(current_page: Mutable<u32>, total: Mutable<u32>) -> Dom {
+    html!("div", {
+        .style("margin-top", "1.25rem")
+        .style("display", "flex")
+        .style("justify-content", "center")
+        .style("align-items", "center")
+        .style("gap", "0.75rem")
+        .child_signal(
+            futures_signals::map_ref! {
+                let page = current_page.signal(),
+                let total = total.signal() => (*page, *total)
+            }.map(clone!(current_page => move |(page, total)| {
+                let page_size = HOME_PAGE_SIZE;
+                let page_count = if total == 0 { 1 } else { total.div_ceil(page_size) };
+                if page_count <= 1 {
+                    return None;
+                }
+                let prev_disabled = page <= 1;
+                let next_disabled = page >= page_count;
+                Some(html!("div", {
+                    .style("display", "flex")
+                    .style("align-items", "center")
+                    .style("gap", "0.5rem")
+                    .children([
+                        page_button("‹ Prev", prev_disabled, clone!(current_page => move || {
+                            let p = current_page.get();
+                            if p > 1 { current_page.set(p - 1); }
+                            scroll_to_top();
+                        })),
+                        html!("span", {
+                            .style("font-size", "0.85rem")
+                            .style("color", "#374151")
+                            .text(&format!("Page {page} of {page_count}"))
+                        }),
+                        page_button("Next ›", next_disabled, clone!(current_page => move || {
+                            let p = current_page.get();
+                            current_page.set(p + 1);
+                            scroll_to_top();
+                        })),
+                    ])
+                }))
+            }))
+        )
+    })
+}
+
+fn page_button(label: &str, disabled: bool, on_click: impl Fn() + 'static) -> Dom {
+    let label = label.to_string();
+    html!("button", {
+        .attr("type", "button")
+        .prop("disabled", disabled)
+        .style("padding", "0.4rem 0.85rem")
+        .style("border-radius", "0.45rem")
+        .style("border", &format!("1px solid {}", groupshop_frontend_shared::theme::color::LINE))
+        .style("background", if disabled { "#f3f4f6" } else { "#ffffff" })
+        .style("color", if disabled { "#9ca3af" } else { "#111827" })
+        .style("cursor", if disabled { "not-allowed" } else { "pointer" })
+        .style("font-size", "0.85rem")
+        .text(&label)
+        .event(move |_: events::Click| {
+            if !disabled {
+                on_click();
+            }
+        })
+    })
+}
+
+fn scroll_to_top() {
+    if let Some(win) = web_sys::window() {
+        win.scroll_to_with_x_and_y(0.0, 0.0);
+    }
 }
 
 fn hero_banner() -> Dom {
