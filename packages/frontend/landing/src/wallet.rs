@@ -406,7 +406,9 @@ async fn phantom_sign_deposit_transaction(
 /// Outcome of `run_self_refund`. Both variants tell the caller "the
 /// participation is now refunded — reload the orders list."
 pub enum RefundOutcome {
-    /// We submitted a fresh on-chain refund this round.
+    /// We submitted a fresh on-chain refund this round. Carries the tx
+    /// signature so future call sites can render a Solscan link.
+    #[allow(dead_code)]
     Submitted(String),
     /// Backend reported the participation was already refunded on-chain
     /// (a previous attempt landed). The build/submit endpoints self-heal
