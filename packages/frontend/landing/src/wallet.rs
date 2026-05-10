@@ -403,6 +403,18 @@ async fn phantom_sign_deposit_transaction(
     })
 }
 
+/// Outcome of `run_self_refund`. Both variants tell the caller "the
+/// participation is now refunded — reload the orders list."
+pub enum RefundOutcome {
+    /// We submitted a fresh on-chain refund this round.
+    Submitted(String),
+    /// Backend reported the participation was already refunded on-chain
+    /// (a previous attempt landed). The build/submit endpoints self-heal
+    /// the D1 mirror in that case, so a reload now shows the row in
+    /// History.
+    AlreadyRefunded,
+}
+
 /// Run the buyer-initiated refund end-to-end. Used by the My Orders
 /// "Withdraw" button. Steps:
 ///   1. Backend builds the SelfRefund transaction with empty signer slots.
@@ -410,12 +422,14 @@ async fn phantom_sign_deposit_transaction(
 ///   3. Backend adds the authority signature and submits.
 ///   4. Backend confirms by reading on-chain `Participation.refunded`
 ///      and mirrors the flag into D1.
-/// Returns the transaction signature on success so the caller can show
-/// it in the UI (matches the deposit UX).
+/// If a prior attempt already landed the on-chain refund but the D1
+/// mirror is stale, the build/submit endpoints self-heal D1 and surface
+/// `AlreadyRefunded` here so the caller can reload without showing an
+/// error.
 pub async fn run_self_refund(
     product_id: groupshop_backend_shared::prelude::ProductId,
     batch_id: u32,
-) -> FrontendResult<String> {
+) -> FrontendResult<RefundOutcome> {
     if !phantom_is_available() {
         return Err(FrontendError::Other(
             "Phantom wallet not available — install it from phantom.app to refund".to_string(),
@@ -423,7 +437,7 @@ pub async fn run_self_refund(
     }
     let wallet = phantom_connect().await?;
 
-    let build = ApiCtx::get()
+    let build = match ApiCtx::get()
         .client
         .account_escrow_refund_build(
             &groupshop_backend_shared::prelude::AccountEscrowRefundBuildRequest {
@@ -432,7 +446,12 @@ pub async fn run_self_refund(
                 batch_id,
             },
         )
-        .await?;
+        .await
+    {
+        Ok(build) => build,
+        Err(err) if is_already_refunded(&err) => return Ok(RefundOutcome::AlreadyRefunded),
+        Err(err) => return Err(err),
+    };
 
     let payload = serde_json::to_string(&build)
         .map_err(|err| FrontendError::Other(format!("failed to encode refund payload: {err}")))?;
@@ -443,7 +462,7 @@ pub async fn run_self_refund(
         .ok_or_else(|| {
             FrontendError::Other("Phantom refund returned a non-string transaction".to_string())
         })?;
-    let submit = ApiCtx::get()
+    let submit = match ApiCtx::get()
         .client
         .account_escrow_refund_submit(
             &groupshop_backend_shared::prelude::AccountEscrowRefundSubmitRequest {
@@ -454,7 +473,12 @@ pub async fn run_self_refund(
                 signed_transaction_base64,
             },
         )
-        .await?;
+        .await
+    {
+        Ok(submit) => submit,
+        Err(err) if is_already_refunded(&err) => return Ok(RefundOutcome::AlreadyRefunded),
+        Err(err) => return Err(err),
+    };
     let signature = submit.tx_signature;
 
     ApiCtx::get()
@@ -467,7 +491,11 @@ pub async fn run_self_refund(
             },
         )
         .await?;
-    Ok(signature)
+    Ok(RefundOutcome::Submitted(signature))
+}
+
+fn is_already_refunded(err: &FrontendError) -> bool {
+    err.to_string().contains("already been refunded")
 }
 
 fn validate_intent_against_manifest(

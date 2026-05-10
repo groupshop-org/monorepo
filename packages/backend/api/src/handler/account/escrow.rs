@@ -360,6 +360,11 @@ pub async fn handle_escrow_refund_build(
         .ok_or_else(|| ApiError::Validation("no participation found for this batch".to_string()))?;
     let participation = ParticipationAccount::from_bytes(&bytes)?;
     if participation.refunded {
+        // Self-heal: a prior refund landed on-chain but the D1 mirror
+        // didn't get flipped (typically because `confirm` errored on RPC
+        // lag). Bring D1 in sync now so the next /account/orders fetch
+        // moves the row to History.
+        reconcile_refunded_in_d1(ctx, &uid, &req.product_id, req.batch_id).await?;
         return Err(ApiError::Validation(
             "this participation has already been refunded".to_string(),
         ));
@@ -430,6 +435,8 @@ pub async fn handle_escrow_refund_submit(
         .ok_or_else(|| ApiError::Validation("no participation found for this batch".to_string()))?;
     let participation = ParticipationAccount::from_bytes(&bytes)?;
     if participation.refunded {
+        // Same self-heal as in `handle_escrow_refund_build` — see note there.
+        reconcile_refunded_in_d1(ctx, &uid, &req.product_id, req.batch_id).await?;
         return Err(ApiError::Validation(
             "this participation has already been refunded".to_string(),
         ));
@@ -561,4 +568,31 @@ fn random_nonce() -> ApiResult<String> {
     random_fill(&mut bytes)
         .map_err(|err| ApiError::Crypto(format!("failed to create nonce: {err}")))?;
     Ok(base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes))
+}
+
+/// Idempotently flip the D1 `user_participation.refunded` flag to 1 for
+/// `(uid, product_id, batch_id)` if a row exists. Used when on-chain state
+/// shows the participation is already refunded but the D1 mirror is stale
+/// (e.g. a prior `confirm` lost a race with RPC propagation).
+async fn reconcile_refunded_in_d1(
+    ctx: &ApiContext,
+    uid: &UserId,
+    product_id: &ProductId,
+    batch_id: u32,
+) -> ApiResult<()> {
+    if let Some(existing) =
+        UserParticipationDb::load_for_batch(ctx, uid, product_id, batch_id).await?
+    {
+        if !existing.refunded {
+            UserParticipationDb::mark_refunded(
+                ctx,
+                uid,
+                product_id,
+                batch_id,
+                &existing.last_tx_signature,
+            )
+            .await?;
+        }
+    }
+    Ok(())
 }

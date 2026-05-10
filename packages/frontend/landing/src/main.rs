@@ -1590,10 +1590,11 @@ fn withdraw_button(product_id: groupshop_backend_shared::prelude::ProductId, bat
                 error.set(None);
                 spawn_local(clone!(working, error, product_id => async move {
                     match wallet::run_self_refund(product_id, batch_id).await {
-                        Ok(_signature) => {
+                        Ok(_) => {
                             // Reload so the orders list re-fetches and the
                             // row moves over to History with the Refunded
-                            // label.
+                            // label. Covers both fresh refunds and the
+                            // self-healed "already refunded" reconcile case.
                             let _ = groupshop_frontend_shared::window().location().reload();
                         }
                         Err(err) => {
