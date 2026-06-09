@@ -7,7 +7,7 @@ mod wallet;
 
 use std::sync::{Arc, Mutex, OnceLock};
 
-use dominator::{append_dom, body, clone, events, html, svg, Dom};
+use dominator::{append_dom, body, clone, events, html, svg, with_node, Dom};
 use futures_signals::signal::{Mutable, SignalExt};
 use groupshop_backend_shared::prelude::*;
 use groupshop_frontend_shared::{
@@ -211,11 +211,8 @@ fn render_home() -> Dom {
         .child(hero_banner())
         .child(html!("section", {
             .attr("id", "products")
+            .class("gs-home-grid")
             .style("margin-top", "2.5rem")
-            .style("display", "grid")
-            .style("grid-template-columns", "minmax(0, 14rem) minmax(0, 1fr)")
-            .style("gap", "1.5rem")
-            .style("align-items", "start")
             .child(category_sidebar(categories.clone(), selected_category.clone(), current_page.clone()))
             .child(html!("div", {
                 .style("min-width", "0")
@@ -291,11 +288,7 @@ fn category_sidebar(
     current_page: Mutable<u32>,
 ) -> Dom {
     html!("aside", {
-        .style("position", "sticky")
-        .style("top", "1rem")
-        .style("align-self", "start")
-        .style("max-height", "calc(100vh - 2rem)")
-        .style("overflow-y", "auto")
+        .class("gs-sidebar")
         .style("border", &format!("1px solid {}", groupshop_frontend_shared::theme::color::LINE))
         .style("border-radius", "0.6rem")
         .style("background", "#ffffff")
@@ -305,41 +298,137 @@ fn category_sidebar(
             .style("margin-bottom", "0.5rem")
             .text("Categories")
         }))
-        .child(category_link_button(
-            "All products",
-            None,
-            0,
+        // Mobile-only compact dropdown. Hidden on desktop by the
+        // `gs-cat-select` rule in stylesheet.rs.
+        .child(category_select(
+            categories.clone(),
             selected.clone(),
             current_page.clone(),
         ))
-        .child_signal(categories.signal_cloned().map(clone!(selected, current_page => move |maybe_cats| {
-            Some(match maybe_cats {
-                None => html!("p", {
-                    .class(&*typography::BODY_MUTED)
-                    .style("font-size", "0.8rem")
-                    .style("padding", "0.4rem 0.5rem")
-                    .text("Loading…")
-                }),
-                Some(cats) if cats.is_empty() => html!("p", {
-                    .class(&*typography::BODY_MUTED)
-                    .style("font-size", "0.8rem")
-                    .style("padding", "0.4rem 0.5rem")
-                    .text("No categories yet.")
-                }),
-                Some(cats) => html!("div", {
-                    .style("display", "flex")
-                    .style("flex-direction", "column")
-                    .children(cats.into_iter().map(|c| category_link_button(
-                        &c.name,
-                        Some(c.id),
-                        c.depth,
-                        selected.clone(),
-                        current_page.clone(),
-                    )).collect::<Vec<_>>())
-                }),
-            })
-        })))
+        // Desktop tree. Hidden on mobile by `gs-cat-tree` so the
+        // dropdown above is the only visible affordance.
+        .child(html!("div", {
+            .class("gs-cat-tree")
+            .child(category_link_button(
+                "All products",
+                None,
+                0,
+                selected.clone(),
+                current_page.clone(),
+            ))
+            .child_signal(categories.signal_cloned().map(clone!(selected, current_page => move |maybe_cats| {
+                Some(match maybe_cats {
+                    None => html!("p", {
+                        .class(&*typography::BODY_MUTED)
+                        .style("font-size", "0.8rem")
+                        .style("padding", "0.4rem 0.5rem")
+                        .text("Loading…")
+                    }),
+                    Some(cats) if cats.is_empty() => html!("p", {
+                        .class(&*typography::BODY_MUTED)
+                        .style("font-size", "0.8rem")
+                        .style("padding", "0.4rem 0.5rem")
+                        .text("No categories yet.")
+                    }),
+                    Some(cats) => html!("div", {
+                        .style("display", "flex")
+                        .style("flex-direction", "column")
+                        .children(cats.into_iter().map(|c| category_link_button(
+                            &c.name,
+                            Some(c.id),
+                            c.depth,
+                            selected.clone(),
+                            current_page.clone(),
+                        )).collect::<Vec<_>>())
+                    }),
+                })
+            })))
+        }))
     })
+}
+
+/// Mobile-friendly dropdown view of the category tree. The browser's
+/// native `<select>` is the right primitive here: deep trees stay
+/// readable, the open list doesn't push page content, and the OS picker
+/// gives proper keyboard / screen-reader behavior for free.
+///
+/// Options carry the `ProductCategoryId` slug as their `value`; the
+/// blank `value=""` option means "All products". Indentation is
+/// approximated with leading non-breaking spaces because `<option>`
+/// rendering ignores most CSS. Not pretty, but legible.
+fn category_select(
+    categories: Mutable<Option<Vec<ProductCategorySummary>>>,
+    selected: Mutable<Option<ProductCategoryId>>,
+    current_page: Mutable<u32>,
+) -> Dom {
+    html!("select" => web_sys::HtmlSelectElement, {
+        .class("gs-cat-select")
+        .attr("aria-label", "Filter by category")
+        .style("display", "none")
+        .style("width", "100%")
+        .style("padding", "0.5rem 0.6rem")
+        .style("border", &format!("1px solid {}", groupshop_frontend_shared::theme::color::LINE_STRONG))
+        .style("border-radius", "0.4rem")
+        .style("background", "#ffffff")
+        .style("color", "#111827")
+        .style("font-size", "0.95rem")
+        .with_node!(node => {
+            .future(clone!(categories, selected, node => async move {
+                // Re-render the option set whenever the category list or
+                // the current selection changes. Browsers don't have a
+                // declarative way to bind a `<select>` to a list, so we
+                // mutate the DOM directly. `node` is captured so this
+                // future re-runs without the surrounding `child_signal`
+                // re-creating the element (which would lose focus).
+                let signal = futures_signals::map_ref! {
+                    let cats = categories.signal_cloned(),
+                    let sel = selected.signal_cloned() => (cats.clone(), sel.clone())
+                };
+                signal.for_each(move |(cats, sel)| {
+                    let cats = cats.unwrap_or_default();
+                    let mut html = String::new();
+                    let sel_str = sel.as_ref().map(|s| s.as_str().to_string()).unwrap_or_default();
+                    let all_selected = if sel.is_none() { " selected" } else { "" };
+                    html.push_str(&format!("<option value=\"\"{all_selected}>All products</option>"));
+                    for c in &cats {
+                        let id = c.id.as_str();
+                        let is_selected = if sel_str == id { " selected" } else { "" };
+                        let indent = "\u{00a0}\u{00a0}".repeat(c.depth as usize);
+                        let safe_name = html_escape(&c.name);
+                        let safe_id = html_escape(id);
+                        html.push_str(&format!(
+                            "<option value=\"{safe_id}\"{is_selected}>{indent}{safe_name}</option>"
+                        ));
+                    }
+                    node.set_inner_html(&html);
+                    async {}
+                }).await;
+            }))
+        })
+        .event(clone!(selected, current_page => move |e: events::Change| {
+            let value = e.target()
+                .and_then(|t| t.dyn_into::<web_sys::HtmlSelectElement>().ok())
+                .map(|s| s.value())
+                .unwrap_or_default();
+            current_page.set(1);
+            if value.is_empty() {
+                selected.set(None);
+            } else if let Ok(id) = ProductCategoryId::new(&value) {
+                selected.set(Some(id));
+            }
+        }))
+    })
+}
+
+/// Minimal HTML escape for the four characters that can break our
+/// hand-built `<option>` markup. Sufficient because the only inputs are
+/// admin-curated category names + slugs.
+fn html_escape(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
 }
 
 fn category_link_button(
@@ -859,11 +948,7 @@ fn render_product_detail_content(
     let price = format!("${:.2}", product.price_cents as f64 / 100.0);
 
     html!("div", {
-        .style("display", "grid")
-        .style("grid-template-columns", "1fr 1fr")
-        .style("gap", "2rem")
-        .style("margin-top", "1.5rem")
-        .style("align-items", "start")
+        .class("gs-detail-grid")
         // Left: product image + info
         .child(html!("div", {
             // Image
@@ -909,8 +994,7 @@ fn render_product_detail_content(
         }))
         // Right: payment panel
         .child(html!("div", {
-            .style("position", "sticky")
-            .style("top", "1.5rem")
+            .class("gs-detail-sticky")
             // Product name + price
             .child(html!("div", {
                 .child(html!("h1", {
@@ -1798,10 +1882,7 @@ fn order_card(order: AccountOrderSummary, current_section: bool) -> Dom {
 
     html!("div", {
         .class(&*chrome::CARD)
-        .style("display", "grid")
-        .style("grid-template-columns", "auto 1fr auto")
-        .style("gap", "1rem")
-        .style("align-items", "center")
+        .class("gs-order-card")
         .child(html!("a", {
             .attr("href", &link)
             .style("text-decoration", "none")

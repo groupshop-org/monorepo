@@ -239,7 +239,8 @@ pub static SECTION_HEADER: LazyLock<String> = LazyLock::new(|| {
         .style("display", "flex")
         .style("align-items", "center")
         .style("justify-content", "space-between")
-        .style("gap", "1rem")
+        .style("flex-wrap", "wrap")
+        .style("gap", "0.5rem 1rem")
         .style("margin-bottom", "1rem")
     }
 });
