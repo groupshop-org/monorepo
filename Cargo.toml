@@ -30,6 +30,7 @@ web-sys = { version = "0.3.82", features = [
     "HmacImportParams",
     "HtmlElement",
     "HtmlInputElement",
+    "HtmlSelectElement",
     "Location",
     "ReadableStream",
     "ReadableStreamDefaultController",
